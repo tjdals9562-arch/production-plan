@@ -1,0 +1,454 @@
+/**
+ * 자동 스케줄링 페이지
+ * 수주 데이터 + 공정경로 마스터 + 작업자/설비 마스터를 기반으로
+ * 유한능력 자동 스케줄을 생성하고 Gantt / 작업자 일일계획으로 시각화
+ */
+
+import { useState, useMemo } from 'react'
+import {
+  Card, Row, Col, Button, Space, Select, Tag, Typography, Badge, Progress,
+  Table, Tooltip, Alert, Statistic, Tabs, Steps, Divider, Empty, Switch,
+  message,
+} from 'antd'
+import {
+  ThunderboltOutlined, CalendarOutlined, UserOutlined, ToolOutlined,
+  WarningOutlined, CheckCircleOutlined, ClockCircleOutlined, BarChartOutlined,
+} from '@ant-design/icons'
+import dayjs from 'dayjs'
+import { schedule, buildWorkerDailyPlan, buildGanttData } from '../../utils/scheduler.js'
+
+const { Title, Text } = Typography
+
+// ─── 샘플 마스터 데이터 (실제로는 상위 컴포넌트에서 prop으로 받음) ───
+const SAMPLE_ORDERS = [
+  { jobNo:'26T0406R01', productCode:'4UF0062*A', productName:'SILL SUPPORT',    orderQty:12, dueDate:'2026-06-09', customer:'오티스엘리베이터' },
+  { jobNo:'26T0512B02', productCode:'3HH-001B',  productName:'HH-프레임 ASSY',  orderQty:8,  dueDate:'2026-05-31', customer:'현대중공업' },
+  { jobNo:'26T0515D04', productCode:'BKT-SET',   productName:'구조체 브라켓 SET',orderQty:15, dueDate:'2026-05-31', customer:'두산에너빌리티' },
+]
+
+const SAMPLE_ROUTES = [
+  { productCode:'4UF0062*A', productName:'SILL SUPPORT', processes:[
+    { seq:1, name:'레이저', timePerEa:0.5, setupTime:0.5, workers:1, equip:'파이버 레이저 #1' },
+    { seq:2, name:'벤딩',   timePerEa:0.3, setupTime:0.3, workers:1, equip:'CNC 벤딩 #1' },
+    { seq:3, name:'탭핑',   timePerEa:0.2, setupTime:0.2, workers:1, equip:'탭핑 머신' },
+    { seq:4, name:'포장',   timePerEa:0.1, setupTime:0.0, workers:1, equip:'—' },
+  ]},
+  { productCode:'3HH-001B', productName:'HH-프레임 ASSY', processes:[
+    { seq:1, name:'레이저', timePerEa:0.8, setupTime:0.5, workers:1, equip:'파이버 레이저 #2' },
+    { seq:2, name:'용접',   timePerEa:1.5, setupTime:0.5, workers:2, equip:'CO2 용접 라인 #1' },
+    { seq:3, name:'도장',   timePerEa:0.5, setupTime:1.0, workers:1, equip:'도장 부스 #1' },
+    { seq:4, name:'조립',   timePerEa:0.8, setupTime:0.3, workers:2, equip:'자동화 조립라인' },
+  ]},
+  { productCode:'BKT-SET', productName:'구조체 브라켓 SET', processes:[
+    { seq:1, name:'레이저', timePerEa:0.6, setupTime:0.5, workers:1, equip:'파이버 레이저 #1' },
+    { seq:2, name:'프레스', timePerEa:0.4, setupTime:0.5, workers:1, equip:'CNC 벤딩 #2' },
+    { seq:3, name:'용접',   timePerEa:2.0, setupTime:0.5, workers:2, equip:'CO2 용접 라인 #2' },
+    { seq:4, name:'조립',   timePerEa:1.0, setupTime:0.3, workers:2, equip:'자동화 조립라인' },
+  ]},
+]
+
+const SAMPLE_WORKERS = [
+  { empId:'EMP-001', name:'김철수', primary:'용접',   secondary:['레이저'],      days:['월','화','수','목','금'], dayHours:8, overtime:2 },
+  { empId:'EMP-002', name:'이영희', primary:'레이저', secondary:['벤딩'],         days:['월','화','수','목','금'], dayHours:8, overtime:0 },
+  { empId:'EMP-003', name:'박민준', primary:'도장',   secondary:[],               days:['월','화','수','목','금'], dayHours:8, overtime:0 },
+  { empId:'EMP-004', name:'정수진', primary:'조립',   secondary:['벤딩','탭핑'],  days:['월','화','수','목','금'], dayHours:8, overtime:0 },
+  { empId:'EMP-005', name:'최민호', primary:'레이저', secondary:['용접'],          days:['월','화','수','목'],      dayHours:8, overtime:4 },
+  { empId:'EMP-006', name:'강지원', primary:'벤딩',   secondary:['레이저','탭핑'],days:['월','화','수','목','금'], dayHours:8, overtime:0 },
+]
+
+const SAMPLE_EQUIPS = [
+  { equipId:'EQ-001', name:'파이버 레이저 #1', process:'레이저', dayHours:16, status:'가동', setupTime:0.5 },
+  { equipId:'EQ-002', name:'파이버 레이저 #2', process:'레이저', dayHours:8,  status:'가동', setupTime:0.5 },
+  { equipId:'EQ-003', name:'CNC 벤딩 #1',      process:'벤딩',   dayHours:8,  status:'가동', setupTime:0.3 },
+  { equipId:'EQ-004', name:'CNC 벤딩 #2',      process:'벤딩',   dayHours:8,  status:'가동', setupTime:0.3 },
+  { equipId:'EQ-005', name:'CO2 용접 라인 #1',  process:'용접',   dayHours:16, status:'가동', setupTime:0.5 },
+  { equipId:'EQ-006', name:'CO2 용접 라인 #2',  process:'용접',   dayHours:8,  status:'가동', setupTime:0.5 },
+  { equipId:'EQ-007', name:'도장 부스 #1',      process:'도장',   dayHours:8,  status:'가동', setupTime:1.0 },
+  { equipId:'EQ-008', name:'자동화 조립라인',   process:'조립',   dayHours:0,  status:'정지', setupTime:0.5 },
+]
+
+// ─── 공정 색상 ────────────────────────────────────────────────────
+const PROC_COLOR = {
+  '레이저':'#3B82F6','벤딩':'#7C3AED','용접':'#F59E0B','탭핑':'#EC4899',
+  '도장':'#10B981','포장':'#0D9488','조립':'#0D9488','프레스':'#DC2626','검사':'#64748B',
+}
+const pc = name => PROC_COLOR[name] || PROC_COLOR[Object.keys(PROC_COLOR).find(k => name?.includes(k))] || '#94A3B8'
+
+// ─── CSS Gantt 차트 ───────────────────────────────────────────────
+function GanttView({ ganttData, startDate, endDate }) {
+  const start = dayjs(startDate)
+  const end = dayjs(endDate)
+  const totalDays = end.diff(start, 'day') + 1
+  const dayWidth = Math.max(28, Math.min(52, Math.round(900 / totalDays)))
+  const today = dayjs().format('YYYY-MM-DD')
+
+  // 날짜 배열 생성
+  const dates = []
+  for (let i = 0; i < totalDays; i++) {
+    dates.push(start.add(i, 'day'))
+  }
+
+  const barLeft = (dateStr) => {
+    const d = dayjs(dateStr)
+    return Math.max(0, d.diff(start, 'day')) * dayWidth
+  }
+  const barWidth = (sDate, eDate) => {
+    const s = dayjs(sDate), e = dayjs(eDate)
+    return Math.max(dayWidth, (e.diff(s, 'day') + 1) * dayWidth)
+  }
+
+  const totalW = totalDays * dayWidth
+
+  return (
+    <div style={{overflowX:'auto'}}>
+      {/* 날짜 헤더 */}
+      <div style={{display:'flex',borderBottom:'2px solid #E2E8F0',position:'sticky',top:0,background:'#fff',zIndex:10}}>
+        <div style={{width:260,flexShrink:0,padding:'8px 12px',fontSize:12,fontWeight:700,color:'#64748B',borderRight:'1px solid #E2E8F0',background:'#F8FAFC'}}>
+          제번 / 제품
+        </div>
+        <div style={{display:'flex',minWidth:totalW}}>
+          {dates.map((d,i)=>{
+            const isToday = d.format('YYYY-MM-DD') === today
+            const isWeekend = d.day() === 0 || d.day() === 6
+            return (
+              <div key={i} style={{
+                width:dayWidth, flexShrink:0, textAlign:'center', fontSize:10, padding:'4px 0',
+                borderRight:'1px solid #F1F5F9', fontWeight:isToday?800:isWeekend?400:600,
+                color:isToday?'#3B82F6':isWeekend?'#CBD5E1':'#64748B',
+                background:isToday?'#EFF6FF':isWeekend?'#F8FAFC':'transparent',
+              }}>
+                <div>{d.format('M/D')}</div>
+                <div style={{fontSize:9,color:'inherit'}}>{'일월화수목금토'[d.day()]}</div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Gantt 행 */}
+      {ganttData.map((job, ri) => (
+        <div key={ri} style={{display:'flex',borderBottom:`1px solid ${job.isAtRisk?'#FECACA':'#F8FAFC'}`,background:job.isAtRisk?'#FFF8F8':'transparent'}}>
+          {/* 제번/제품 정보 */}
+          <div style={{width:260,flexShrink:0,padding:'10px 12px',borderRight:'1px solid #E2E8F0'}}>
+            <div style={{fontSize:13,fontWeight:700,color:'#3B82F6',fontFamily:'monospace'}}>{job.jobNo}</div>
+            <div style={{fontSize:11,color:'#64748B',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{job.productName}</div>
+            <div style={{display:'flex',gap:6,marginTop:4,flexWrap:'wrap'}}>
+              <Text style={{fontSize:10,color:'#94A3B8'}}>납기 {job.dueDate}</Text>
+              {job.isAtRisk && <Tag color="error" style={{fontSize:10,padding:'0 4px',margin:0}}>위험</Tag>}
+            </div>
+          </div>
+
+          {/* 바 영역 */}
+          <div style={{position:'relative',height:60,minWidth:totalW}}>
+            {/* 오늘 선 */}
+            {barLeft(today) >= 0 && barLeft(today) <= totalW && (
+              <div style={{position:'absolute',left:barLeft(today),top:0,bottom:0,width:2,background:'#3B82F6',opacity:0.4,zIndex:5}} />
+            )}
+            {/* 납기선 */}
+            {job.dueDate && (
+              <div style={{position:'absolute',left:barLeft(job.dueDate)+dayWidth/2,top:0,bottom:0,width:2,background:'#EF4444',opacity:0.5,zIndex:5}} />
+            )}
+            {/* 격자 */}
+            {dates.map((d,i) => (
+              <div key={i} style={{position:'absolute',left:i*dayWidth,top:0,bottom:0,width:dayWidth,
+                background:(d.day()===0||d.day()===6)?'rgba(241,245,249,0.7)':'transparent',
+                borderRight:'1px solid #F8FAFC'}} />
+            ))}
+            {/* 공정 바 */}
+            {job.bars.map((bar, bi) => (
+              <Tooltip key={bi} title={
+                <div>
+                  <div><strong>{bar.label}</strong></div>
+                  <div>{bar.startDate} ~ {bar.endDate}</div>
+                  <div>작업자: {bar.worker || '미배정'}</div>
+                  <div>설비: {bar.equip || '—'}</div>
+                  {bar.warning && <div style={{color:'#FCA5A5'}}>⚠ {bar.warning}</div>}
+                </div>
+              }>
+                <div style={{
+                  position:'absolute', top:'50%', transform:'translateY(-50%)',
+                  left: barLeft(bar.startDate) + 2,
+                  width: Math.max(barWidth(bar.startDate, bar.endDate) - 4, dayWidth - 4),
+                  height: 24, borderRadius:5,
+                  background: bar.status==='위험' ? '#EF4444' : pc(bar.label),
+                  opacity: bar.status==='위험' ? 1 : 0.88,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:10, fontWeight:700, color:'#fff', cursor:'pointer',
+                  boxShadow:'0 1px 4px rgba(0,0,0,0.18)',
+                  border: bar.warning ? '2px solid #FCA5A5' : 'none',
+                }}>
+                  {barWidth(bar.startDate, bar.endDate) > dayWidth + 10 ? bar.label : ''}
+                </div>
+              </Tooltip>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* 범례 */}
+      <div style={{marginTop:16,display:'flex',gap:12,flexWrap:'wrap',padding:'8px 0',borderTop:'1px solid #F1F5F9'}}>
+        {Object.entries(PROC_COLOR).map(([name, color]) => (
+          <Space key={name} size={5}>
+            <div style={{width:12,height:12,borderRadius:3,background:color}} />
+            <Text style={{fontSize:11,color:'#64748B'}}>{name}</Text>
+          </Space>
+        ))}
+        <Space size={5}><div style={{width:2,height:12,background:'#3B82F6',opacity:0.5}} /><Text style={{fontSize:11,color:'#64748B'}}>오늘</Text></Space>
+        <Space size={5}><div style={{width:2,height:12,background:'#EF4444',opacity:0.5}} /><Text style={{fontSize:11,color:'#64748B'}}>납기</Text></Space>
+      </div>
+    </div>
+  )
+}
+
+// ─── 작업자 일일계획 뷰 ──────────────────────────────────────────
+function WorkerPlanView({ workerPlan, dateRange }) {
+  const [selectedDate, setSelectedDate] = useState(dateRange[0])
+
+  const start = dayjs(dateRange[0])
+  const end = dayjs(dateRange[1])
+  const dates = []
+  for (let d = start.clone(); !d.isAfter(end); d = d.add(1, 'day')) {
+    dates.push(d.format('YYYY-MM-DD'))
+  }
+
+  return (
+    <div>
+      <Space style={{marginBottom:16}} size={8}>
+        <Text strong>날짜 선택:</Text>
+        <Select style={{width:160}} value={selectedDate} onChange={setSelectedDate}
+          options={dates.map(d => ({ label:`${d} (${['일','월','화','수','목','금','토'][dayjs(d).day()]})`, value:d }))} />
+      </Space>
+
+      <Row gutter={12}>
+        {Object.entries(workerPlan).map(([workerName, tasks]) => {
+          const dayTasks = tasks.filter(t => t.date === selectedDate)
+          return (
+            <Col key={workerName} span={8} style={{marginBottom:12}}>
+              <Card bordered={false} size="small"
+                style={{borderRadius:10, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', borderTop:`3px solid ${dayTasks.length>0?'#3B82F6':'#E2E8F0'}`}}
+                styles={{body:{padding:'12px'}}}>
+                <Space style={{marginBottom:8}}>
+                  <UserOutlined style={{color:'#3B82F6'}} />
+                  <Text strong>{workerName}</Text>
+                  <Tag color={dayTasks.length>0?'blue':'default'} style={{fontSize:10}}>{dayTasks.length}건</Tag>
+                </Space>
+                {dayTasks.length === 0 ? (
+                  <Text type="secondary" style={{fontSize:12}}>작업 없음</Text>
+                ) : (
+                  dayTasks.map((t, i) => (
+                    <div key={i} style={{
+                      padding:'6px 10px', marginBottom:4, borderRadius:8,
+                      background:pc(t.processName)+'15', borderLeft:`3px solid ${pc(t.processName)}`,
+                    }}>
+                      <div style={{fontSize:12,fontWeight:700,color:'#0F172A',fontFamily:'monospace'}}>{t.jobNo}</div>
+                      <div style={{fontSize:11,color:'#64748B'}}>{t.productName}</div>
+                      <Space size={4} style={{marginTop:3}}>
+                        <Tag style={{fontSize:10,padding:'0 6px',margin:0,background:pc(t.processName)+'20',color:pc(t.processName),border:'none'}}>{t.processName}</Tag>
+                        <Text style={{fontSize:10,color:'#94A3B8'}}>{t.equip}</Text>
+                      </Space>
+                    </div>
+                  ))
+                )}
+              </Card>
+            </Col>
+          )
+        })}
+      </Row>
+    </div>
+  )
+}
+
+// ─── 작업지시 목록 뷰 ────────────────────────────────────────────
+function TaskListView({ tasks }) {
+  const cols = [
+    { title:'제번', dataIndex:'jobNo', width:120, fixed:'left', render:v=><Text strong style={{color:'#3B82F6',fontSize:12,fontFamily:'monospace'}}>{v}</Text> },
+    { title:'제품명', dataIndex:'productName', ellipsis:true, render:v=><Text>{v}</Text> },
+    { title:'공정', dataIndex:'processName', width:90, render:v=><Tag style={{background:pc(v)+'20',color:pc(v),border:`1px solid ${pc(v)}55`,fontWeight:600,fontSize:11}}>{v}</Tag> },
+    { title:'수량', dataIndex:'qty', width:65, align:'center' },
+    { title:'시작일', dataIndex:'startDate', width:100 },
+    { title:'완료예정', dataIndex:'endDate', width:100,
+      render:(v,r)=><Text style={{color:r.status==='위험'?'#EF4444':'',fontWeight:r.status==='위험'?700:400}}>{v}</Text> },
+    { title:'납기일', dataIndex:'dueDate', width:100, render:v=><Text type="secondary">{v||'—'}</Text> },
+    { title:'작업자', dataIndex:'assignedWorkerName', width:80, render:v=><Text style={{color:v?'':'#EF4444',fontWeight:!v?700:400}}>{v||'미배정'}</Text> },
+    { title:'설비', dataIndex:'assignedEquip', width:140, render:v=><Text style={{fontSize:12}}>{v||'—'}</Text> },
+    { title:'소요(h)', dataIndex:'hours', width:80, align:'center', render:v=><Text strong style={{color:'#7C3AED'}}>{v}h</Text> },
+    { title:'상태', dataIndex:'status', width:80,
+      render:(v,r)=>(
+        <Space direction="vertical" size={0}>
+          <Badge status={v==='위험'?'error':v==='예정'?'processing':'default'} text={v} />
+          {r.warning && <Text style={{fontSize:10,color:'#EF4444'}}>{r.warning}</Text>}
+        </Space>
+      )},
+  ]
+
+  return (
+    <Table columns={cols} dataSource={tasks.map((t,i)=>({...t,key:i}))}
+      pagination={{pageSize:20,showTotal:t=>`총 ${t}건`}} size="small" scroll={{x:1100}} />
+  )
+}
+
+// ─── 메인 컴포넌트 ────────────────────────────────────────────────
+export function AutoSchedule() {
+  const [tasks, setTasks] = useState(null)
+  const [ganttData, setGanttData] = useState(null)
+  const [workerPlan, setWorkerPlan] = useState(null)
+  const [generating, setGenerating] = useState(false)
+  const [startDateStr, setStartDateStr] = useState(dayjs().format('YYYY-MM-DD'))
+  const [activeTab, setActiveTab] = useState('gantt')
+
+  const handleGenerate = () => {
+    setGenerating(true)
+    setTimeout(() => {
+      try {
+        const startDate = new Date(startDateStr)
+        const result = schedule(SAMPLE_ORDERS, SAMPLE_ROUTES, SAMPLE_WORKERS, SAMPLE_EQUIPS, startDate)
+        const gd = buildGanttData(result)
+        const wp = buildWorkerDailyPlan(result, SAMPLE_WORKERS)
+        setTasks(result)
+        setGanttData(gd)
+        setWorkerPlan(wp)
+        message.success(`${result.length}개 작업 일정을 생성했습니다.`)
+      } catch(e) {
+        message.error(`스케줄링 오류: ${e.message}`)
+        console.error(e)
+      } finally {
+        setGenerating(false)
+      }
+    }, 400)
+  }
+
+  // Gantt 날짜 범위 계산
+  const { ganttStart, ganttEnd } = useMemo(() => {
+    if (!tasks || tasks.length === 0) return { ganttStart: startDateStr, ganttEnd: dayjs(startDateStr).add(14,'day').format('YYYY-MM-DD') }
+    const allDates = tasks.flatMap(t => [t.startDate, t.endDate]).filter(Boolean)
+    const minDate = allDates.reduce((m,d) => d < m ? d : m, allDates[0])
+    const maxDate = allDates.reduce((m,d) => d > m ? d : m, allDates[0])
+    // 범위 ±3일 여유
+    return {
+      ganttStart: dayjs(minDate).subtract(1,'day').format('YYYY-MM-DD'),
+      ganttEnd:   dayjs(maxDate).add(3,'day').format('YYYY-MM-DD'),
+    }
+  }, [tasks, startDateStr])
+
+  const riskTasks = tasks?.filter(t => t.status === '위험') || []
+  const unassigned = tasks?.filter(t => !t.assignedWorkerName) || []
+
+  const tabItems = [
+    {
+      key: 'gantt',
+      label: <Space><CalendarOutlined />Gantt 차트</Space>,
+      children: ganttData
+        ? <GanttView ganttData={ganttData} startDate={ganttStart} endDate={ganttEnd} />
+        : <Empty description="좌측 상단에서 '자동 계획 생성'을 클릭하세요" />,
+    },
+    {
+      key: 'worker',
+      label: <Space><UserOutlined />작업자 일일계획</Space>,
+      children: workerPlan
+        ? <WorkerPlanView workerPlan={workerPlan} dateRange={[ganttStart, ganttEnd]} />
+        : <Empty description="계획 생성 후 확인 가능합니다" />,
+    },
+    {
+      key: 'list',
+      label: <Space><BarChartOutlined />작업지시 목록</Space>,
+      children: tasks
+        ? <TaskListView tasks={tasks} />
+        : <Empty description="계획 생성 후 확인 가능합니다" />,
+    },
+  ]
+
+  return (
+    <div>
+      <div style={{marginBottom:20,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div>
+          <Title level={4} style={{margin:0}}>자동 생산계획 생성</Title>
+          <Text type="secondary">수주 + 공정경로 + 작업자/설비 마스터 기반 유한능력 스케줄링</Text>
+        </div>
+        <Space>
+          <Select
+            value={startDateStr}
+            onChange={setStartDateStr}
+            style={{width:160}}
+            options={Array.from({length:14},(_,i)=>{
+              const d = dayjs().add(i,'day')
+              return { label:`${d.format('MM/DD')} (${['일','월','화','수','목','금','토'][d.day()]}) 시작`, value:d.format('YYYY-MM-DD') }
+            })}
+          />
+          <Button
+            type="primary"
+            size="large"
+            icon={<ThunderboltOutlined />}
+            loading={generating}
+            onClick={handleGenerate}
+            style={{background:'linear-gradient(135deg,#3B82F6,#7C3AED)',border:'none',fontWeight:700}}
+          >
+            자동 계획 생성
+          </Button>
+        </Space>
+      </div>
+
+      {/* 입력 데이터 상태 */}
+      <Row gutter={12} style={{marginBottom:16}}>
+        {[
+          {l:'수주 (수량)',   v:`${SAMPLE_ORDERS.length}건`,        c:'#3B82F6', icon:<CalendarOutlined />},
+          {l:'공정경로 등록', v:`${SAMPLE_ROUTES.length}개 제품`,   c:'#7C3AED', icon:<ToolOutlined />},
+          {l:'작업자',       v:`${SAMPLE_WORKERS.length}명`,        c:'#10B981', icon:<UserOutlined />},
+          {l:'가동 설비',    v:`${SAMPLE_EQUIPS.filter(e=>e.status==='가동').length}대`, c:'#F59E0B', icon:<ToolOutlined />},
+        ].map((s,i)=>(
+          <Col key={i} span={6}>
+            <Card bordered={false} style={{borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,0.06)',borderLeft:`4px solid ${s.c}`}} styles={{body:{padding:'12px 16px'}}}>
+              <Space><Text style={{fontSize:12,color:s.c}}>{s.icon}</Text><Text style={{fontSize:12,color:'#64748B'}}>{s.l}</Text></Space>
+              <Text strong style={{fontSize:20,color:s.c,display:'block',marginTop:4}}>{s.v}</Text>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      {/* 생성 결과 경고 */}
+      {tasks && riskTasks.length > 0 && (
+        <Alert
+          type="error" showIcon icon={<WarningOutlined />}
+          message={`납기 초과 위험 ${riskTasks.length}건 — ${[...new Set(riskTasks.map(t=>t.jobNo))].join(', ')}`}
+          style={{marginBottom:16,borderRadius:10}}
+        />
+      )}
+      {tasks && unassigned.length > 0 && (
+        <Alert
+          type="warning" showIcon icon={<WarningOutlined />}
+          message={`작업자 미배정 ${unassigned.length}건 — 공정 담당 가능 작업자를 확인하세요`}
+          style={{marginBottom:16,borderRadius:10}}
+        />
+      )}
+      {tasks && riskTasks.length === 0 && unassigned.length === 0 && (
+        <Alert
+          type="success" showIcon icon={<CheckCircleOutlined />}
+          message="모든 수주의 납기 내 일정 수립 완료 — 작업자 및 설비 전량 배정됨"
+          style={{marginBottom:16,borderRadius:10}}
+        />
+      )}
+
+      {/* 생성 결과 KPI */}
+      {tasks && (
+        <Row gutter={12} style={{marginBottom:16}}>
+          {[
+            {l:'총 작업지시',    v:tasks.length+'건',                       c:'#3B82F6'},
+            {l:'납기위험',       v:riskTasks.length+'건',                    c:'#EF4444'},
+            {l:'미배정',         v:unassigned.length+'건',                   c:'#F59E0B'},
+            {l:'총 소요시간',    v:tasks.reduce((s,t)=>s+t.totalHours,0).toFixed(0)+'h', c:'#7C3AED'},
+          ].map((s,i)=>(
+            <Col key={i} span={6}>
+              <Card bordered={false} style={{borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,0.06)',borderTop:`3px solid ${s.c}`}} styles={{body:{padding:'12px 16px'}}}>
+                <Statistic title={<Text style={{fontSize:12,color:'#64748B'}}>{s.l}</Text>} value={s.v} valueStyle={{fontSize:20,fontWeight:800,color:s.c}} />
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      )}
+
+      {/* 결과 탭 */}
+      <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
+        <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
+      </Card>
+    </div>
+  )
+}
