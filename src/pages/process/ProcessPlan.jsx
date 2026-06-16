@@ -1,9 +1,16 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Table, Card, Row, Col, Button, Space, Select, Tag, Typography, Badge, Progress, Tooltip,
-  Form, Input, InputNumber, Modal, Drawer, Steps, Divider, Alert, message, Empty, Popconfirm, Statistic } from 'antd'
+  Form, Input, InputNumber, Modal, Drawer, Steps, Divider, Alert, message, Empty, Popconfirm, Statistic, Spin,
+  AutoComplete, Switch } from 'antd'
+import {
+  fetchWorkers, saveWorker, deleteWorkerById, seedWorkers,
+  fetchEquipment, saveEquipment, deleteEquipmentById, seedEquipment,
+  fetchProcessRoutes, upsertProcessRoute, deleteProcessRouteById, seedProcessRoutes,
+  fetchProcesses, saveProcess, deleteProcessById, seedProcesses,
+} from '../../api/db.js'
 import { PlusOutlined, PrinterOutlined, DownloadOutlined, SettingOutlined,
   InboxOutlined, FileExcelOutlined, CheckCircleOutlined, EditOutlined, DeleteOutlined,
-  ArrowRightOutlined, ClockCircleOutlined, TeamOutlined, ToolOutlined } from '@ant-design/icons'
+  ArrowRightOutlined, ClockCircleOutlined, TeamOutlined, ToolOutlined, SearchOutlined } from '@ant-design/icons'
 import * as XLSX from 'xlsx'
 
 const { Title, Text } = Typography
@@ -171,17 +178,7 @@ function GanttChart() {
   )
 }
 
-// ─── 공정 색상 맵 ────────────────────────────────────────────────
-const PROC_COLOR = {
-  '레이저':'#3B82F6', '레이저절단':'#3B82F6',
-  '벤딩':'#7C3AED',   '절곡':'#7C3AED',
-  '용접':'#F59E0B',
-  '탭핑':'#EC4899',   '탭':'#EC4899',
-  '도장':'#10B981',   '도색':'#10B981',
-  '포장':'#0D9488',   '조립':'#0D9488',
-  '프레스':'#DC2626', '검사':'#64748B',
-}
-const procColor = name => PROC_COLOR[name] || PROC_COLOR[Object.keys(PROC_COLOR).find(k=>name?.includes(k))] || '#94A3B8'
+const procColor = () => '#3B82F6'
 
 // ─── 공정경로 마스터 데이터 (초기 샘플) ─────────────────────────
 const INIT_ROUTES = [
@@ -298,73 +295,127 @@ function ProcessFlow({ processes }) {
   )
 }
 
-// ─── 공정 상세 Drawer ────────────────────────────────────────────
-function RouteDetailDrawer({ route, open, onClose }) {
-  if (!route) return null
-  const totalTime = route.processes.reduce((s,p) => s + p.timePerEa, 0)
-  const totalSetup = route.processes.reduce((s,p) => s + p.setupTime, 0)
-  const maxWorkers = Math.max(...route.processes.map(p=>p.workers))
+// ─── 공정경로 등록/수정 Drawer ───────────────────────────────────
+function RouteFormDrawer({ route, open, onClose, onSaved }) {
+  const [form] = Form.useForm()
+  const [saving, setSaving] = useState(false)
+  const isNew = !route
 
-  const procCols = [
-    { title:'순서', dataIndex:'seq', width:55, align:'center', render:v=><Tag style={{margin:0,fontWeight:700}}>{v}</Tag> },
-    { title:'공정명', dataIndex:'name', render:(v)=>(
-      <Space size={6}>
-        <div style={{width:10,height:10,borderRadius:3,background:procColor(v),flexShrink:0}} />
-        <Text strong>{v}</Text>
-      </Space>
-    )},
-    { title:'소요시간/EA', dataIndex:'timePerEa', align:'center', render:v=><Text strong style={{color:'#3B82F6'}}>{v}h</Text> },
-    { title:'셋업시간', dataIndex:'setupTime', align:'center', render:v=><Text type="secondary">{v}h</Text> },
-    { title:'필요인원', dataIndex:'workers', align:'center', render:v=><Text><TeamOutlined /> {v}명</Text> },
-    { title:'사용설비', dataIndex:'equip', render:v=><Text type="secondary" style={{fontSize:12}}>{v}</Text> },
-  ]
+  useEffect(() => {
+    if (!open) return
+    if (route) {
+      form.setFieldsValue({
+        productCode: route.productCode,
+        productName: route.productName,
+        spec:        route.spec,
+        processes:   route.processes.map(p => ({ ...p })),
+      })
+    } else {
+      form.resetFields()
+      form.setFieldsValue({ processes: [{ seq:1, name:'', timePerEa:0, setupTime:0, workers:1, equip:'—' }] })
+    }
+  }, [open, route])
+
+  const handleSave = async () => {
+    try {
+      const vals = await form.validateFields()
+      setSaving(true)
+      const routeData = {
+        ...vals,
+        key: route?.key,
+        processes: (vals.processes || []).map((p, i) => ({ ...p, seq: i + 1 })),
+      }
+      await upsertProcessRoute(routeData)
+      message.success(isNew ? '등록 완료' : '수정 완료')
+      onSaved()
+      onClose()
+    } catch(e) {
+      if (e?.errorFields) return
+      message.error('저장 실패: ' + e.message)
+    } finally { setSaving(false) }
+  }
 
   return (
-    <Drawer title={
-      <Space>
-        <SettingOutlined style={{color:'#3B82F6'}} />
-        <Text strong>{route.productCode}</Text>
-        <Text type="secondary" style={{fontSize:13}}>{route.productName}</Text>
-      </Space>
-    } open={open} onClose={onClose} width={640}>
-      <Row gutter={12} style={{marginBottom:20}}>
-        {[
-          {l:'공정 수',    v:`${route.processes.length}단계`, c:'#3B82F6'},
-          {l:'총 소요시간', v:`${totalTime.toFixed(1)}h/EA`, c:'#7C3AED'},
-          {l:'총 셋업시간', v:`${totalSetup.toFixed(1)}h`,   c:'#F59E0B'},
-          {l:'최대 투입인원',v:`${maxWorkers}명`,            c:'#10B981'},
-        ].map((s,i)=>(
-          <Col key={i} span={6}>
-            <Card bordered={false} size="small"
-              style={{borderRadius:8,borderTop:`3px solid ${s.c}`,boxShadow:'0 1px 3px rgba(0,0,0,0.06)'}}
-              styles={{body:{padding:'10px 12px'}}}>
-              <Text style={{fontSize:11,color:'#64748B',display:'block'}}>{s.l}</Text>
-              <Text strong style={{fontSize:16,color:s.c}}>{s.v}</Text>
-            </Card>
-          </Col>
-        ))}
-      </Row>
+    <Drawer
+      title={
+        <Space>
+          <SettingOutlined style={{color:'#3B82F6'}} />
+          <Text strong>{isNew ? '공정경로 신규 등록' : `${route?.productCode} 수정`}</Text>
+        </Space>
+      }
+      open={open} onClose={onClose} width={700}
+      footer={
+        <Space style={{justifyContent:'flex-end',width:'100%'}}>
+          <Button onClick={onClose}>취소</Button>
+          <Button type="primary" loading={saving} onClick={handleSave}
+            style={{background:'#10B981',borderColor:'#10B981'}}>저장</Button>
+        </Space>
+      }
+    >
+      <Form form={form} layout="vertical" size="small">
+        <Row gutter={12}>
+          <Col span={7}><Form.Item label="주문PT#" name="productCode" rules={[{required:true,message:'필수'}]}><Input /></Form.Item></Col>
+          <Col span={11}><Form.Item label="품명" name="productName" rules={[{required:true,message:'필수'}]}><Input /></Form.Item></Col>
+          <Col span={6}><Form.Item label="규격" name="spec"><Input /></Form.Item></Col>
+        </Row>
 
-      <Text strong style={{display:'block',marginBottom:10,color:'#374151'}}>공정 플로우</Text>
-      <div style={{background:'#F8FAFC',borderRadius:10,padding:'16px',marginBottom:20}}>
-        <ProcessFlow processes={route.processes} />
-      </div>
+        <Divider style={{margin:'4px 0 12px'}}>공정 단계</Divider>
 
-      <Text strong style={{display:'block',marginBottom:10,color:'#374151'}}>공정 상세</Text>
-      <Table columns={procCols} dataSource={route.processes.map((p,i)=>({...p,key:i}))}
-        pagination={false} size="small" />
+        <div style={{display:'flex',gap:4,marginBottom:6,padding:'0 4px'}}>
+          {['#','공정명','소요(h/EA)','셋업(h)','인원','설비',''].map((h,i)=>(
+            <div key={i} style={{flex:[0.4,2,1.2,1.2,0.8,2,0.5][i],fontSize:11,fontWeight:600,color:'#64748B'}}>{h}</div>
+          ))}
+        </div>
+
+        <Form.List name="processes">
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map((field, idx) => (
+                <div key={field.key} style={{display:'flex',gap:4,marginBottom:6,alignItems:'center'}}>
+                  <div style={{flex:0.4,textAlign:'center',color:'#94A3B8',fontSize:12}}>{idx+1}</div>
+                  <div style={{flex:2}}><Form.Item name={[field.name,'name']} noStyle rules={[{required:true,message:''}]}><Input placeholder="공정명" /></Form.Item></div>
+                  <div style={{flex:1.2}}><Form.Item name={[field.name,'timePerEa']} noStyle><InputNumber min={0} step={0.1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
+                  <div style={{flex:1.2}}><Form.Item name={[field.name,'setupTime']} noStyle><InputNumber min={0} step={0.1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
+                  <div style={{flex:0.8}}><Form.Item name={[field.name,'workers']} noStyle><InputNumber min={1} style={{width:'100%'}} placeholder="1" /></Form.Item></div>
+                  <div style={{flex:2}}><Form.Item name={[field.name,'equip']} noStyle><Input placeholder="설비명" /></Form.Item></div>
+                  <div style={{flex:0.5}}>
+                    <Button size="small" danger type="text" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                  </div>
+                </div>
+              ))}
+              <Button type="dashed" block icon={<PlusOutlined />} style={{marginTop:4}}
+                onClick={() => add({ seq:fields.length+1, name:'', timePerEa:0, setupTime:0, workers:1, equip:'—' })}>
+                공정 추가
+              </Button>
+            </>
+          )}
+        </Form.List>
+      </Form>
     </Drawer>
   )
 }
 
 // ─── 공정경로 관리 메인 ──────────────────────────────────────────
 function ProcessRouteMaster() {
-  const [routes, setRoutes] = useState(INIT_ROUTES)
+  const [routes, setRoutes] = useState([])
+  const [dbLoading, setDbLoading] = useState(true)
   const [parsing, setParsing] = useState(false)
   const [searchText, setSearchText] = useState('')
-  const [detailRoute, setDetailRoute] = useState(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [formRoute, setFormRoute] = useState(null)
+  const [formOpen, setFormOpen] = useState(false)
   const [importLog, setImportLog] = useState([])
+
+  const loadRoutes = async () => {
+    setDbLoading(true)
+    try {
+      const data = await fetchProcessRoutes()
+      if (data.length) { setRoutes(data) }
+      else { await seedProcessRoutes(INIT_ROUTES); setRoutes(await fetchProcessRoutes()) }
+    } catch { message.error('공정경로 로드 실패'); setRoutes(INIT_ROUTES) }
+    finally { setDbLoading(false) }
+  }
+
+  useEffect(() => { loadRoutes() }, [])
 
   const handleFile = useCallback(async file => {
     if (!/\.(xlsx?|xls)$/i.test(file.name)) { message.error('xlsx/xls 파일만 가능합니다'); return false }
@@ -372,21 +423,19 @@ function ProcessRouteMaster() {
     try {
       const rows = await parseRouteExcel(file)
       if (rows.length === 0) { message.warning('공정 데이터를 찾을 수 없습니다. 컬럼명을 확인하세요.'); return false }
-      setRoutes(prev => {
-        const next = [...prev]
-        let added = 0, updated = 0
-        rows.forEach(r => {
-          const idx = next.findIndex(x => x.productCode === r.productCode)
-          if (idx >= 0) { next[idx] = r; updated++ } else { next.push(r); added++ }
-        })
-        message.success(`${added}건 추가, ${updated}건 갱신`)
-        setImportLog(l => [{ filename:file.name, added, updated, at:new Date().toLocaleTimeString() }, ...l.slice(0,4)])
-        return next
-      })
+      let added = 0, updated = 0
+      for (const r of rows) {
+        const exists = routes.find(x => x.productCode === r.productCode)
+        await upsertProcessRoute(r)
+        exists ? updated++ : added++
+      }
+      message.success(`${added}건 추가, ${updated}건 갱신`)
+      setImportLog(l => [{ filename:file.name, added, updated, at:new Date().toLocaleTimeString() }, ...l.slice(0,4)])
+      await loadRoutes()
     } catch(e) { message.error(`파싱 오류: ${e.message}`) }
     finally { setParsing(false) }
     return false
-  }, [])
+  }, [routes])
 
   const filtered = routes.filter(r => {
     const q = searchText.toLowerCase()
@@ -394,10 +443,10 @@ function ProcessRouteMaster() {
   })
 
   const cols = [
-    { title:'제품코드', dataIndex:'productCode', width:130, fixed:'left',
+    { title:'주문PT#', dataIndex:'productCode', width:130, fixed:'left',
       render:v=><Text strong style={{color:'#3B82F6',fontSize:12,fontFamily:'monospace'}}>{v}</Text> },
-    { title:'품명', dataIndex:'productName', render:v=><Text strong>{v}</Text> },
-    { title:'규격', dataIndex:'spec', width:150, render:v=><Text type="secondary" style={{fontSize:12}}>{v}</Text> },
+    { title:'품명', dataIndex:'productName', width:200, ellipsis:true, render:v=><Text strong>{v}</Text> },
+    { title:'규격', dataIndex:'spec', width:130, ellipsis:true, render:v=><Text type="secondary" style={{fontSize:12}}>{v}</Text> },
     { title:'공정 수', key:'cnt', width:65, align:'center',
       render:(_,r)=><Tag color="blue">{r.processes.length}단계</Tag> },
     { title:'공정 플로우', key:'flow', render:(_,r)=><ProcessFlow processes={r.processes} /> },
@@ -410,9 +459,9 @@ function ProcessRouteMaster() {
       render:(_,r)=>(
         <Space size={4}>
           <Button size="small" icon={<EditOutlined />}
-            onClick={()=>{ setDetailRoute(r); setDrawerOpen(true) }}>상세</Button>
+            onClick={()=>{ setFormRoute(r); setFormOpen(true) }}>상세</Button>
           <Popconfirm title="이 공정경로를 삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
-            onConfirm={()=>setRoutes(prev=>prev.filter(x=>x.key!==r.key))}>
+            onConfirm={async()=>{ try { await deleteProcessRouteById(r.key); await loadRoutes() } catch { message.error('삭제 실패') } }}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -475,22 +524,47 @@ function ProcessRouteMaster() {
             style={{width:240}} value={searchText} onChange={e=>setSearchText(e.target.value)} allowClear />
           <Button icon={<DownloadOutlined />}>Excel 내보내기</Button>
           <Button type="primary" icon={<PlusOutlined />}
-            style={{marginLeft:'auto',background:'#10B981',borderColor:'#10B981'}}>수동 등록</Button>
+            style={{marginLeft:'auto',background:'#10B981',borderColor:'#10B981'}}
+            onClick={()=>{ setFormRoute(null); setFormOpen(true) }}>수동 등록</Button>
         </Space>
 
-        <Table columns={cols} dataSource={filtered} pagination={{pageSize:15,showTotal:t=>`총 ${t}개 제품`}}
-          size="middle" scroll={{x:1000}}
-          locale={{emptyText:<Empty description="공정경로 데이터가 없습니다. 위에서 엑셀을 업로드하세요." />}} />
+        <Spin spinning={dbLoading}>
+          <Table columns={cols} dataSource={filtered} pagination={{pageSize:15,showTotal:t=>`총 ${t}개 제품`}}
+            bordered size="small" scroll={{x:1000}}
+            locale={{emptyText:<Empty description="공정경로 데이터가 없습니다. 위에서 엑셀을 업로드하세요." />}} />
+        </Spin>
       </Card>
 
-      <RouteDetailDrawer route={detailRoute} open={drawerOpen} onClose={()=>setDrawerOpen(false)} />
+      <RouteFormDrawer route={formRoute} open={formOpen} onClose={()=>setFormOpen(false)} onSaved={loadRoutes} />
     </div>
   )
 }
 
 // ─── 작업자 마스터 ───────────────────────────────────────────────
 const DAYS_KR = ['월','화','수','목','금','토','일']
-const ALL_PROCESSES = ['레이저','벤딩','용접','탭핑','도장','포장','조립','프레스','검사']
+const ALL_PROCESSES = ['레이저','절곡','태핑','용접','도장','프레스','포장','랜딩도어조립','로프행거제작','랜딩도어포장','브라켓볼트포장','카도어포장']
+
+// ─── 공정마스터 초기 데이터 (금산산기 기준) ──────────────────────
+const INIT_PROCESSES = [
+  // 레이저반 (1차 범위 제외)
+  { code:'L01', name:'레이저',         dept:'레이저반', category:'절단', stdTime:30,  sortOrder:1,  isActive:false, note:'1차 범위 제외' },
+  // 제관반
+  { code:'M01', name:'절곡',           dept:'제관반',   category:'성형', stdTime:20,  sortOrder:10, isActive:true,  note:'' },
+  { code:'M02', name:'태핑',           dept:'제관반',   category:'기타', stdTime:10,  sortOrder:11, isActive:true,  note:'' },
+  { code:'M03', name:'용접',           dept:'제관반',   category:'용접', stdTime:60,  sortOrder:12, isActive:true,  note:'' },
+  { code:'M04', name:'도장',           dept:'제관반',   category:'도장', stdTime:30,  sortOrder:13, isActive:true,  note:'' },
+  { code:'M05', name:'프레스',         dept:'제관반',   category:'성형', stdTime:15,  sortOrder:14, isActive:true,  note:'' },
+  { code:'M06', name:'포장',           dept:'제관반',   category:'기타', stdTime:10,  sortOrder:15, isActive:true,  note:'' },
+  // 조립반
+  { code:'A01', name:'랜딩도어조립',   dept:'조립반',   category:'조립', stdTime:60,  sortOrder:20, isActive:true,  note:'' },
+  { code:'A02', name:'로프행거제작',   dept:'조립반',   category:'조립', stdTime:40,  sortOrder:21, isActive:true,  note:'' },
+  { code:'A03', name:'랜딩도어포장',   dept:'조립반',   category:'기타', stdTime:20,  sortOrder:22, isActive:true,  note:'' },
+  { code:'A04', name:'브라켓볼트포장', dept:'조립반',   category:'기타', stdTime:15,  sortOrder:23, isActive:true,  note:'' },
+  { code:'A05', name:'카도어포장',     dept:'조립반',   category:'기타', stdTime:20,  sortOrder:24, isActive:true,  note:'' },
+]
+const CATEGORIES = ['절단', '성형', '용접', '도장', '조립', '기타']
+const DEPT_OPTIONS = ['레이저반', '제관반', '조립반']
+const DEPT_COLOR = { '레이저반': 'blue', '제관반': 'orange', '조립반': 'green' }
 
 const INIT_WORKERS = [
   { key:'w1', empId:'EMP-001', name:'김철수', primary:'용접',   secondary:['레이저'],      days:['월','화','수','목','금'], dayHours:8,  overtime:2, note:'' },
@@ -502,10 +576,34 @@ const INIT_WORKERS = [
 ]
 
 function WorkerMaster() {
-  const [workers, setWorkers] = useState(INIT_WORKERS)
+  const [workers, setWorkers] = useState([])
+  const [dbLoading, setDbLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [editWorker, setEditWorker] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [form] = Form.useForm()
+  const [procOpts, setProcOpts] = useState(ALL_PROCESSES.map(p=>({label:p,value:p})))
+
+  useEffect(() => {
+    fetchProcesses()
+      .then(data => {
+        const active = data.filter(p => p.isActive)
+        if (active.length) setProcOpts(active.map(p => ({label:p.name,value:p.name})))
+      })
+      .catch(() => {})
+  }, [])
+
+  const loadWorkers = async () => {
+    setDbLoading(true)
+    try {
+      const data = await fetchWorkers()
+      if (data.length) { setWorkers(data) }
+      else { await seedWorkers(INIT_WORKERS); setWorkers(await fetchWorkers()) }
+    } catch { message.error('작업자 데이터 로드 실패'); setWorkers(INIT_WORKERS) }
+    finally { setDbLoading(false) }
+  }
+
+  useEffect(() => { loadWorkers() }, [])
 
   const openEdit = (w = null) => {
     setEditWorker(w)
@@ -514,18 +612,19 @@ function WorkerMaster() {
   }
 
   const handleSave = () => {
-    form.validateFields().then(vals => {
-      if (editWorker) {
-        setWorkers(prev => prev.map(w => w.key === editWorker.key ? { ...w, ...vals } : w))
-      } else {
-        setWorkers(prev => [...prev, { ...vals, key:`w${Date.now()}`, empId:`EMP-${String(prev.length+1).padStart(3,'0')}` }])
-      }
-      setModalOpen(false)
+    form.validateFields().then(async vals => {
+      setSaving(true)
+      try {
+        const merged = editWorker ? { ...editWorker, ...vals } : vals
+        await saveWorker(merged, !editWorker)
+        await loadWorkers()
+        setModalOpen(false)
+      } catch(e) { message.error('저장 실패: ' + e.message) }
+      finally { setSaving(false) }
     })
   }
 
   const cols = [
-    { title:'사원번호', dataIndex:'empId', width:100, render:v=><Text style={{color:'#3B82F6',fontSize:12,fontFamily:'monospace'}}>{v}</Text> },
     { title:'이름', dataIndex:'name', width:90, render:v=><Text strong>{v}</Text> },
     { title:'주력공정', dataIndex:'primary', width:100,
       render:v=><Tag style={{background:procColor(v)+'22',color:procColor(v),border:`1px solid ${procColor(v)}55`,fontWeight:600}}>{v}</Tag> },
@@ -557,7 +656,7 @@ function WorkerMaster() {
         <Space size={4}>
           <Button size="small" icon={<EditOutlined />} onClick={()=>openEdit(r)} />
           <Popconfirm title="삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
-            onConfirm={()=>setWorkers(prev=>prev.filter(w=>w.key!==r.key))}>
+            onConfirm={async()=>{ try { await deleteWorkerById(r.key); await loadWorkers() } catch { message.error('삭제 실패') } }}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -592,20 +691,23 @@ function WorkerMaster() {
           <Button type="primary" icon={<PlusOutlined />} onClick={()=>openEdit()}
             style={{background:'#10B981',borderColor:'#10B981'}}>작업자 추가</Button>
         </div>
-        <Table columns={cols} dataSource={workers} pagination={false} size="middle" scroll={{x:1000}} />
+        <Spin spinning={dbLoading}>
+          <Table columns={cols} dataSource={workers} pagination={false} size="middle" scroll={{x:1000}} />
+        </Spin>
       </Card>
 
       <Modal title={editWorker ? '작업자 수정' : '작업자 추가'} open={modalOpen}
-        onOk={handleSave} onCancel={()=>setModalOpen(false)} okText="저장" cancelText="취소" width={580}>
+        onOk={handleSave} onCancel={()=>setModalOpen(false)} okText="저장" cancelText="취소"
+        confirmLoading={saving} width={580}>
         <Form form={form} layout="vertical" style={{marginTop:16}}>
           <Row gutter={16}>
             <Col span={12}><Form.Item label="이름" name="name" rules={[{required:true}]}><Input /></Form.Item></Col>
             <Col span={12}><Form.Item label="주력공정" name="primary" rules={[{required:true}]}>
-              <Select options={ALL_PROCESSES.map(p=>({label:p,value:p}))} />
+              <Select options={procOpts} showSearch />
             </Form.Item></Col>
             <Col span={24}><Form.Item label="겸직공정 (복수 선택)">
               <Form.Item name="secondary" noStyle>
-                <Select mode="multiple" options={ALL_PROCESSES.map(p=>({label:p,value:p}))} placeholder="없으면 비워두세요" />
+                <Select mode="multiple" options={procOpts} placeholder="없으면 비워두세요" />
               </Form.Item>
             </Form.Item></Col>
             <Col span={24}><Form.Item label="근무요일" name="days" rules={[{required:true}]}>
@@ -638,10 +740,34 @@ const INIT_EQUIP = [
 ]
 
 function EquipMaster() {
-  const [equips, setEquips] = useState(INIT_EQUIP)
+  const [equips, setEquips] = useState([])
+  const [dbLoading, setDbLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [editEquip, setEditEquip] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [form] = Form.useForm()
+  const [procOpts, setProcOpts] = useState(ALL_PROCESSES.map(p=>({label:p,value:p})))
+
+  useEffect(() => {
+    fetchProcesses()
+      .then(data => {
+        const active = data.filter(p => p.isActive)
+        if (active.length) setProcOpts(active.map(p => ({label:p.name,value:p.name})))
+      })
+      .catch(() => {})
+  }, [])
+
+  const loadEquipment = async () => {
+    setDbLoading(true)
+    try {
+      const data = await fetchEquipment()
+      if (data.length) { setEquips(data) }
+      else { await seedEquipment(INIT_EQUIP); setEquips(await fetchEquipment()) }
+    } catch { message.error('설비 데이터 로드 실패'); setEquips(INIT_EQUIP) }
+    finally { setDbLoading(false) }
+  }
+
+  useEffect(() => { loadEquipment() }, [])
 
   const openEdit = (eq = null) => {
     setEditEquip(eq)
@@ -650,13 +776,15 @@ function EquipMaster() {
   }
 
   const handleSave = () => {
-    form.validateFields().then(vals => {
-      if (editEquip) {
-        setEquips(prev => prev.map(e => e.key === editEquip.key ? { ...e, ...vals } : e))
-      } else {
-        setEquips(prev => [...prev, { ...vals, key:`eq${Date.now()}`, equipId:`EQ-${String(prev.length+1).padStart(3,'0')}` }])
-      }
-      setModalOpen(false)
+    form.validateFields().then(async vals => {
+      setSaving(true)
+      try {
+        const merged = editEquip ? { ...editEquip, ...vals } : vals
+        await saveEquipment(merged, !editEquip)
+        await loadEquipment()
+        setModalOpen(false)
+      } catch(e) { message.error('저장 실패: ' + e.message) }
+      finally { setSaving(false) }
     })
   }
 
@@ -677,7 +805,7 @@ function EquipMaster() {
         <Space size={4}>
           <Button size="small" icon={<EditOutlined />} onClick={()=>openEdit(r)} />
           <Popconfirm title="삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
-            onConfirm={()=>setEquips(prev=>prev.filter(e=>e.key!==r.key))}>
+            onConfirm={async()=>{ try { await deleteEquipmentById(r.key); await loadEquipment() } catch { message.error('삭제 실패') } }}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -713,16 +841,19 @@ function EquipMaster() {
           <Button type="primary" icon={<PlusOutlined />} onClick={()=>openEdit()}
             style={{background:'#10B981',borderColor:'#10B981'}}>설비 추가</Button>
         </div>
-        <Table columns={cols} dataSource={equips} pagination={false} size="middle" scroll={{x:900}} />
+        <Spin spinning={dbLoading}>
+          <Table columns={cols} dataSource={equips} pagination={false} size="middle" scroll={{x:900}} />
+        </Spin>
       </Card>
 
       <Modal title={editEquip ? '설비 수정' : '설비 추가'} open={modalOpen}
-        onOk={handleSave} onCancel={()=>setModalOpen(false)} okText="저장" cancelText="취소" width={520}>
+        onOk={handleSave} onCancel={()=>setModalOpen(false)} okText="저장" cancelText="취소"
+        confirmLoading={saving} width={520}>
         <Form form={form} layout="vertical" style={{marginTop:16}}>
           <Row gutter={16}>
             <Col span={12}><Form.Item label="설비명" name="name" rules={[{required:true}]}><Input /></Form.Item></Col>
             <Col span={12}><Form.Item label="담당공정" name="process" rules={[{required:true}]}>
-              <Select options={ALL_PROCESSES.map(p=>({label:p,value:p}))} />
+              <Select options={procOpts} showSearch />
             </Form.Item></Col>
             <Col span={12}><Form.Item label="운영시프트" name="shift">
               <Select options={['주간','야간','주/야'].map(v=>({label:v,value:v}))} />
@@ -744,6 +875,157 @@ function EquipMaster() {
   )
 }
 
+// ─── 공정마스터 ──────────────────────────────────────────────────
+function ProcessMaster() {
+  const [processes, setProcesses] = useState([])
+  const [dbLoading, setDbLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [editProc, setEditProc] = useState(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [form] = Form.useForm()
+
+  const deptSuggest = useMemo(() => {
+    const extra = [...new Set(processes.map(p => p.dept).filter(Boolean))]
+    return [...new Set([...DEPT_OPTIONS, ...extra])].map(d => ({ value: d }))
+  }, [processes])
+
+  const loadProcesses = async () => {
+    setDbLoading(true)
+    try {
+      const data = await fetchProcesses()
+      if (data.length) { setProcesses(data) }
+      else { await seedProcesses(INIT_PROCESSES); setProcesses(await fetchProcesses()) }
+    } catch { message.error('공정 데이터 로드 실패'); setProcesses(INIT_PROCESSES.map((p,i)=>({...p,key:String(i)}))) }
+    finally { setDbLoading(false) }
+  }
+
+  useEffect(() => { loadProcesses() }, [])
+
+  const openEdit = (p = null) => {
+    setEditProc(p)
+    form.setFieldsValue(p ? { ...p } : { isActive: true, sortOrder: (processes.length + 1) * 5, stdTime: 0 })
+    setModalOpen(true)
+  }
+
+  const handleSave = () => {
+    form.validateFields().then(async vals => {
+      setSaving(true)
+      try {
+        await saveProcess(editProc ? { ...editProc, ...vals } : vals, !editProc)
+        await loadProcesses()
+        setModalOpen(false)
+      } catch(e) { message.error('저장 실패: ' + e.message) }
+      finally { setSaving(false) }
+    })
+  }
+
+  const deptGroups = useMemo(() => {
+    const g = {}
+    processes.forEach(p => { if (p.dept) g[p.dept] = (g[p.dept] || 0) + 1 })
+    return g
+  }, [processes])
+
+  const cols = [
+    { title:'코드', dataIndex:'code', width:80, fixed:'left',
+      render:v=><Text style={{color:'#3B82F6',fontSize:12,fontFamily:'monospace'}}>{v||'—'}</Text> },
+    { title:'공정명', dataIndex:'name', width:130, render:v=><Text strong>{v}</Text> },
+    { title:'소속반', dataIndex:'dept', width:110,
+      render:v=>v?<Tag color={DEPT_COLOR[v]||'default'}>{v}</Tag>:<Text type="secondary">—</Text> },
+    { title:'분류', dataIndex:'category', width:80,
+      render:v=>v?<Tag>{v}</Tag>:<Text type="secondary">—</Text> },
+    { title:'표준시간(분/EA)', dataIndex:'stdTime', width:130, align:'center',
+      render:v=><Text strong style={{color:'#7C3AED'}}>{v}분</Text> },
+    { title:'정렬순서', dataIndex:'sortOrder', width:80, align:'center',
+      render:v=><Text type="secondary">{v}</Text> },
+    { title:'사용여부', dataIndex:'isActive', width:90, align:'center',
+      render:v=><Badge status={v?'success':'default'} text={v?'활성':'비활성'} /> },
+    { title:'비고', dataIndex:'note', ellipsis:true,
+      render:v=><Text type="secondary" style={{fontSize:12}}>{v||'—'}</Text> },
+    { title:'', key:'act', width:80, fixed:'right',
+      render:(_,r)=>(
+        <Space size={4}>
+          <Button size="small" icon={<EditOutlined />} onClick={()=>openEdit(r)} />
+          <Popconfirm title="삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
+            onConfirm={async()=>{ try { await deleteProcessById(r.key); await loadProcesses() } catch { message.error('삭제 실패') } }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      )},
+  ]
+
+  const statCards = [
+    {l:'총 공정수', v:processes.length+'개', c:'#3B82F6'},
+    {l:'제관반',    v:(deptGroups['제관반']||0)+'개', c:'#F97316'},
+    {l:'조립반',    v:(deptGroups['조립반']||0)+'개', c:'#10B981'},
+    {l:'비활성',    v:processes.filter(p=>!p.isActive).length+'개', c:'#94A3B8'},
+  ]
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <Title level={4} style={{margin:0}}>공정마스터</Title>
+        <Text type="secondary">반별 공정 목록 · 분류 · 표준시간 관리 — 작업자·설비마스터 드롭다운과 연동</Text>
+      </div>
+
+      <Row gutter={12} style={{marginBottom:16}}>
+        {statCards.map((s,i)=>(
+          <Col key={i} span={6}>
+            <Card bordered={false} style={{borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,0.06)',borderTop:`3px solid ${s.c}`}} styles={{body:{padding:'12px 16px'}}}>
+              <Statistic title={<Text style={{fontSize:12,color:'#64748B'}}>{s.l}</Text>}
+                value={s.v} valueStyle={{fontSize:20,fontWeight:800,color:s.c}} />
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
+        <div style={{marginBottom:12,display:'flex',justifyContent:'flex-end'}}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={()=>openEdit()}
+            style={{background:'#10B981',borderColor:'#10B981'}}>공정 추가</Button>
+        </div>
+        <Spin spinning={dbLoading}>
+          <Table columns={cols} dataSource={processes} pagination={false} size="middle" scroll={{x:900}}
+            rowClassName={r=>!r.isActive?'proc-inactive':''} />
+        </Spin>
+      </Card>
+
+      <Modal title={editProc?'공정 수정':'공정 추가'} open={modalOpen}
+        onOk={handleSave} onCancel={()=>setModalOpen(false)} okText="저장" cancelText="취소"
+        confirmLoading={saving} width={520}>
+        <Form form={form} layout="vertical" style={{marginTop:16}}>
+          <Row gutter={16}>
+            <Col span={10}><Form.Item label="공정코드" name="code">
+              <Input placeholder="M01, A01 등 (선택)" />
+            </Form.Item></Col>
+            <Col span={14}><Form.Item label="공정명" name="name" rules={[{required:true,message:'공정명을 입력하세요'}]}>
+              <Input placeholder="절곡, 용접, 랜딩도어조립 등" />
+            </Form.Item></Col>
+            <Col span={12}><Form.Item label="소속반" name="dept">
+              <AutoComplete options={deptSuggest} placeholder="레이저반 / 제관반 / 조립반" allowClear />
+            </Form.Item></Col>
+            <Col span={12}><Form.Item label="공정분류" name="category">
+              <Select allowClear placeholder="분류 선택"
+                options={CATEGORIES.map(c=>({label:c,value:c}))} />
+            </Form.Item></Col>
+            <Col span={12}><Form.Item label="표준시간 (분/EA)" name="stdTime">
+              <InputNumber min={0} style={{width:'100%'}} addonAfter="분" placeholder="0" />
+            </Form.Item></Col>
+            <Col span={12}><Form.Item label="정렬순서" name="sortOrder">
+              <InputNumber min={0} style={{width:'100%'}} />
+            </Form.Item></Col>
+            <Col span={12}><Form.Item label="사용여부" name="isActive" valuePropName="checked">
+              <Switch checkedChildren="활성" unCheckedChildren="비활성" defaultChecked />
+            </Form.Item></Col>
+            <Col span={24}><Form.Item label="비고" name="note">
+              <Input placeholder="특이사항" />
+            </Form.Item></Col>
+          </Row>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
 function PlaceholderPage({ title }) {
   return (
     <div>
@@ -756,6 +1038,7 @@ function PlaceholderPage({ title }) {
 export function ProcessPlan({ sub }) {
   if (!sub || sub==='workOrder')   return <WorkOrder />
   if (sub==='gantt')               return <GanttChart />
+  if (sub==='processMaster')       return <ProcessMaster />
   if (sub==='processRoute')        return <ProcessRouteMaster />
   if (sub==='workerMaster')        return <WorkerMaster />
   if (sub==='equipMaster')         return <EquipMaster />

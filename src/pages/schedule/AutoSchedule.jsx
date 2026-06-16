@@ -4,18 +4,22 @@
  * 유한능력 자동 스케줄을 생성하고 Gantt / 작업자 일일계획으로 시각화
  */
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Card, Row, Col, Button, Space, Select, Tag, Typography, Badge, Progress,
   Table, Tooltip, Alert, Statistic, Tabs, Steps, Divider, Empty, Switch,
-  message,
+  Spin, message, Modal, Popconfirm,
 } from 'antd'
 import {
   ThunderboltOutlined, CalendarOutlined, UserOutlined, ToolOutlined,
   WarningOutlined, CheckCircleOutlined, ClockCircleOutlined, BarChartOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { schedule, buildWorkerDailyPlan, buildGanttData } from '../../utils/scheduler.js'
+import { fetchOrders, fetchProcessRoutes, fetchWorkers, fetchEquipment,
+  saveSchedule, fetchSchedules, fetchScheduleById, deleteSchedule } from '../../api/db.js'
+import { SaveOutlined, HistoryOutlined } from '@ant-design/icons'
 
 const { Title, Text } = Typography
 
@@ -269,14 +273,24 @@ function TaskListView({ tasks }) {
     { title:'완료예정', dataIndex:'endDate', width:100,
       render:(v,r)=><Text style={{color:r.status==='위험'?'#EF4444':'',fontWeight:r.status==='위험'?700:400}}>{v}</Text> },
     { title:'납기일', dataIndex:'dueDate', width:100, render:v=><Text type="secondary">{v||'—'}</Text> },
-    { title:'작업자', dataIndex:'assignedWorkerName', width:80, render:v=><Text style={{color:v?'':'#EF4444',fontWeight:!v?700:400}}>{v||'미배정'}</Text> },
+    { title:'작업자', dataIndex:'assignedWorker', width:120,
+      render:(v,r)=>(
+        <Space direction="vertical" size={0}>
+          <Text style={{fontSize:12,color:r.assignedWorkerList?.length?'':'#EF4444'}}>{v||'미배정'}</Text>
+          {r.neededWorkers > 1 && (
+            <Text style={{fontSize:10,color:r.assignedWorkerCount>=r.neededWorkers?'#10B981':'#F59E0B'}}>
+              {r.assignedWorkerCount||0}/{r.neededWorkers}명
+            </Text>
+          )}
+        </Space>
+      )},
     { title:'설비', dataIndex:'assignedEquip', width:140, render:v=><Text style={{fontSize:12}}>{v||'—'}</Text> },
     { title:'소요(h)', dataIndex:'hours', width:80, align:'center', render:v=><Text strong style={{color:'#7C3AED'}}>{v}h</Text> },
     { title:'상태', dataIndex:'status', width:80,
       render:(v,r)=>(
         <Space direction="vertical" size={0}>
-          <Badge status={v==='위험'?'error':v==='예정'?'processing':'default'} text={v} />
-          {r.warning && <Text style={{fontSize:10,color:'#EF4444'}}>{r.warning}</Text>}
+          <Badge status={v==='위험'?'error':v==='주의'?'warning':v==='예정'?'processing':'default'} text={v} />
+          {r.warning && <Text style={{fontSize:10,color:v==='위험'?'#EF4444':'#F59E0B'}}>{r.warning}</Text>}
         </Space>
       )},
   ]
@@ -287,23 +301,101 @@ function TaskListView({ tasks }) {
   )
 }
 
+const PRIORITY_OPTIONS = [
+  { label: '납기우선 (EDD)', value: 'EDD', desc: '납기일이 가장 빠른 수주 먼저 배정' },
+  { label: '여유시간우선 (Slack)', value: 'SLACK', desc: '납기까지 여유가 가장 적은 수주 먼저' },
+  { label: '투입순 (FIFO)', value: 'FIFO', desc: '수주 입력 순서대로 배정' },
+]
+
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────
 export function AutoSchedule() {
   const [tasks, setTasks] = useState(null)
   const [ganttData, setGanttData] = useState(null)
   const [workerPlan, setWorkerPlan] = useState(null)
   const [generating, setGenerating] = useState(false)
+  const [dataLoading, setDataLoading] = useState(true)
   const [startDateStr, setStartDateStr] = useState(dayjs().format('YYYY-MM-DD'))
   const [activeTab, setActiveTab] = useState('gantt')
+  const [priorityRule, setPriorityRule] = useState('EDD')
+  const [saving, setSaving] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyList, setHistoryList] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+
+  // 실제 DB 데이터
+  const [orders, setOrders] = useState(SAMPLE_ORDERS)
+  const [routes, setRoutes] = useState(SAMPLE_ROUTES)
+  const [workers, setWorkers] = useState(SAMPLE_WORKERS)
+  const [equips, setEquips] = useState(SAMPLE_EQUIPS)
+  const [usingRealData, setUsingRealData] = useState(false)
+
+  useEffect(() => {
+    Promise.all([
+      fetchOrders().catch(() => []),
+      fetchProcessRoutes().catch(() => []),
+      fetchWorkers().catch(() => []),
+      fetchEquipment().catch(() => []),
+    ]).then(([ords, rts, wkrs, eqs]) => {
+      let real = false
+      if (ords.length)  { setOrders(ords.filter(o => (o.remainQty || o.orderQty || 0) > 0)); real = true }
+      if (rts.length)   { setRoutes(rts);   real = true }
+      if (wkrs.length)  { setWorkers(wkrs); real = true }
+      if (eqs.length)   { setEquips(eqs);   real = true }
+      setUsingRealData(real)
+    }).finally(() => setDataLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    if (!tasks?.length) return
+    setSaving(true)
+    try {
+      const label = `${startDateStr} 계획 (${PRIORITY_OPTIONS.find(p=>p.value===priorityRule)?.label})`
+      await saveSchedule({ label, priority: priorityRule, startDate: startDateStr, tasks })
+      message.success('계획이 저장되었습니다.')
+    } catch(e) { message.error('저장 실패: ' + e.message) }
+    finally { setSaving(false) }
+  }
+
+  const handleOpenHistory = async () => {
+    setHistoryOpen(true)
+    setHistoryLoading(true)
+    try {
+      const list = await fetchSchedules()
+      setHistoryList(list)
+    } catch { message.error('이력 조회 실패') }
+    finally { setHistoryLoading(false) }
+  }
+
+  const handleLoadSchedule = async (id) => {
+    try {
+      const row = await fetchScheduleById(id)
+      const loaded = row.tasks
+      const gd = buildGanttData(loaded)
+      const wp = buildWorkerDailyPlan(loaded, workers)
+      setTasks(loaded)
+      setGanttData(gd)
+      setWorkerPlan(wp)
+      setHistoryOpen(false)
+      message.success(`"${row.label}" 불러왔습니다.`)
+    } catch(e) { message.error('불러오기 실패: ' + e.message) }
+  }
+
+  const handleDeleteSchedule = async (id) => {
+    try {
+      await deleteSchedule(id)
+      setHistoryList(prev => prev.filter(r => r.id !== id))
+      message.success('삭제되었습니다.')
+    } catch { message.error('삭제 실패') }
+  }
 
   const handleGenerate = () => {
     setGenerating(true)
     setTimeout(() => {
       try {
         const startDate = new Date(startDateStr)
-        const result = schedule(SAMPLE_ORDERS, SAMPLE_ROUTES, SAMPLE_WORKERS, SAMPLE_EQUIPS, startDate)
+        const result = schedule(orders, routes, workers, equips, startDate, { priorityRule })
         const gd = buildGanttData(result)
-        const wp = buildWorkerDailyPlan(result, SAMPLE_WORKERS)
+        const wp = buildWorkerDailyPlan(result, workers)
         setTasks(result)
         setGanttData(gd)
         setWorkerPlan(wp)
@@ -357,14 +449,20 @@ export function AutoSchedule() {
     },
   ]
 
+  const activeEquips = equips.filter(e => e.status === '가동')
+  const priorityDesc = PRIORITY_OPTIONS.find(p => p.value === priorityRule)?.desc || ''
+
   return (
     <div>
-      <div style={{marginBottom:20,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <div style={{marginBottom:20,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
         <div>
           <Title level={4} style={{margin:0}}>자동 생산계획 생성</Title>
           <Text type="secondary">수주 + 공정경로 + 작업자/설비 마스터 기반 유한능력 스케줄링</Text>
         </div>
-        <Space>
+        <Space wrap>
+          {!usingRealData && (
+            <Tag color="warning" style={{fontSize:11}}>샘플 데이터 사용 중 — 마스터 데이터 입력 후 실데이터로 전환됩니다</Tag>
+          )}
           <Select
             value={startDateStr}
             onChange={setStartDateStr}
@@ -374,35 +472,85 @@ export function AutoSchedule() {
               return { label:`${d.format('MM/DD')} (${['일','월','화','수','목','금','토'][d.day()]}) 시작`, value:d.format('YYYY-MM-DD') }
             })}
           />
+          <Tooltip title={priorityDesc}>
+            <Select
+              value={priorityRule}
+              onChange={setPriorityRule}
+              style={{width:170}}
+              options={PRIORITY_OPTIONS.map(p => ({label:p.label, value:p.value}))}
+            />
+          </Tooltip>
           <Button
             type="primary"
             size="large"
             icon={<ThunderboltOutlined />}
-            loading={generating}
+            loading={generating || dataLoading}
             onClick={handleGenerate}
             style={{background:'linear-gradient(135deg,#3B82F6,#7C3AED)',border:'none',fontWeight:700}}
           >
             자동 계획 생성
           </Button>
+          {tasks && (
+            <Button icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
+              계획 저장
+            </Button>
+          )}
+          <Button icon={<HistoryOutlined />} onClick={handleOpenHistory}>이력</Button>
         </Space>
       </div>
 
+      {/* 저장 이력 Modal */}
+      <Modal title="저장된 계획 이력" open={historyOpen} onCancel={()=>setHistoryOpen(false)}
+        footer={null} width={700}>
+        <Spin spinning={historyLoading}>
+          {historyList.length === 0 ? (
+            <Empty description="저장된 계획이 없습니다" />
+          ) : (
+            <Table
+              size="small"
+              pagination={false}
+              dataSource={historyList.map(r=>({...r,key:r.id}))}
+              columns={[
+                { title:'계획명', dataIndex:'label', render:v=><Text strong style={{fontSize:12}}>{v}</Text> },
+                { title:'우선순위', dataIndex:'priority', width:100, render:v=><Tag>{v}</Tag> },
+                { title:'작업 수', dataIndex:'stat_total', width:80, align:'center', render:v=><Text>{v}건</Text> },
+                { title:'위험', dataIndex:'stat_risk', width:70, align:'center',
+                  render:v=><Text style={{color:v>0?'#EF4444':'#94A3B8',fontWeight:v>0?700:400}}>{v}건</Text> },
+                { title:'저장일시', dataIndex:'created_at', width:140,
+                  render:v=><Text type="secondary" style={{fontSize:11}}>{new Date(v).toLocaleString('ko-KR')}</Text> },
+                { title:'', width:100, render:(_,r)=>(
+                  <Space size={4}>
+                    <Button size="small" type="link" onClick={()=>handleLoadSchedule(r.id)}>불러오기</Button>
+                    <Popconfirm title="삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
+                      onConfirm={()=>handleDeleteSchedule(r.id)}>
+                      <Button size="small" type="link" danger>삭제</Button>
+                    </Popconfirm>
+                  </Space>
+                )},
+              ]}
+            />
+          )}
+        </Spin>
+      </Modal>
+
       {/* 입력 데이터 상태 */}
-      <Row gutter={12} style={{marginBottom:16}}>
-        {[
-          {l:'수주 (수량)',   v:`${SAMPLE_ORDERS.length}건`,        c:'#3B82F6', icon:<CalendarOutlined />},
-          {l:'공정경로 등록', v:`${SAMPLE_ROUTES.length}개 제품`,   c:'#7C3AED', icon:<ToolOutlined />},
-          {l:'작업자',       v:`${SAMPLE_WORKERS.length}명`,        c:'#10B981', icon:<UserOutlined />},
-          {l:'가동 설비',    v:`${SAMPLE_EQUIPS.filter(e=>e.status==='가동').length}대`, c:'#F59E0B', icon:<ToolOutlined />},
-        ].map((s,i)=>(
-          <Col key={i} span={6}>
-            <Card bordered={false} style={{borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,0.06)',borderLeft:`4px solid ${s.c}`}} styles={{body:{padding:'12px 16px'}}}>
-              <Space><Text style={{fontSize:12,color:s.c}}>{s.icon}</Text><Text style={{fontSize:12,color:'#64748B'}}>{s.l}</Text></Space>
-              <Text strong style={{fontSize:20,color:s.c,display:'block',marginTop:4}}>{s.v}</Text>
-            </Card>
-          </Col>
-        ))}
-      </Row>
+      <Spin spinning={dataLoading}>
+        <Row gutter={12} style={{marginBottom:16}}>
+          {[
+            {l:'수주',        v:`${orders.length}건`,          c:'#3B82F6', icon:<CalendarOutlined />},
+            {l:'공정경로 등록', v:`${routes.length}개 제품`,   c:'#7C3AED', icon:<ToolOutlined />},
+            {l:'작업자',      v:`${workers.length}명`,         c:'#10B981', icon:<UserOutlined />},
+            {l:'가동 설비',   v:`${activeEquips.length}대`,    c:'#F59E0B', icon:<ToolOutlined />},
+          ].map((s,i)=>(
+            <Col key={i} span={6}>
+              <Card bordered={false} style={{borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,0.06)',borderLeft:`4px solid ${s.c}`}} styles={{body:{padding:'12px 16px'}}}>
+                <Space><Text style={{fontSize:12,color:s.c}}>{s.icon}</Text><Text style={{fontSize:12,color:'#64748B'}}>{s.l}</Text></Space>
+                <Text strong style={{fontSize:20,color:s.c,display:'block',marginTop:4}}>{s.v}</Text>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </Spin>
 
       {/* 생성 결과 경고 */}
       {tasks && riskTasks.length > 0 && (

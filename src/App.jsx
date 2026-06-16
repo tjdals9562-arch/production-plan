@@ -3,20 +3,19 @@ import { ConfigProvider, Layout, Menu, Breadcrumb, Avatar, Space, Tag, Typograph
 import {
   DashboardOutlined, FileTextOutlined, CalendarOutlined,
   ToolOutlined, SettingOutlined, BarChartOutlined,
-  CarOutlined, FileSearchOutlined, BankOutlined,
+  CarOutlined, FileSearchOutlined, DatabaseOutlined,
   UserOutlined, LogoutOutlined, BellOutlined,
   RightOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
 import { Dashboard }         from './pages/Dashboard.jsx'
 import { OrderManagement }   from './pages/order/OrderManagement.jsx'
 import { MasterPlan }        from './pages/mps/MasterPlan.jsx'
-import { MaterialPlan }      from './pages/mrp/MaterialPlan.jsx'
 import { ProcessPlan }       from './pages/process/ProcessPlan.jsx'
-import { CapacityPlan }      from './pages/crp/CapacityPlan.jsx'
 import { ProductionResult }  from './pages/result/ProductionResult.jsx'
 import { DeliveryMgmt }      from './pages/delivery/DeliveryMgmt.jsx'
 import { Reports }           from './pages/report/Reports.jsx'
 import { AutoSchedule }      from './pages/schedule/AutoSchedule.jsx'
+import { UnregisteredProcess } from './pages/master/UnregisteredProcess.jsx'
 
 const { Sider, Content, Header } = Layout
 
@@ -55,31 +54,18 @@ const APP_THEME = {
 
 const MENUS = [
   { id:'dashboard',  icon:<DashboardOutlined />,    name:'대시보드' },
-  { id:'autoSchedule',icon:<ThunderboltOutlined />, name:'자동 생산계획 생성', badge:'NEW' },
+  { id:'autoSchedule', icon:<ThunderboltOutlined />, name:'자동 생산계획 생성', sub:[
+    ['generate','계획 생성'],['gantt','일정계획 (Gantt)'],
+    ['weekPlan','주간 생산계획'],['dayPlan','일일 생산계획'],['workerPlan','작업자별 생산계획'],
+  ]},
   { id:'order',   icon:<FileTextOutlined />, name:'수주관리', sub:[
-    ['orderList','수주현황'],['orderInput','수주등록'],['deliveryCheck','납기검토'],['orderChange','계획변경 요청'],
+    ['orderList','수주현황'],['orderInput','수주등록'],['deliveryCheck','납기검토'],
   ]},
-  { id:'mps', icon:<CalendarOutlined />, name:'기준생산계획 (MPS)', sub:[
-    ['mpsMonth','월간 생산계획'],['mpsWeek','주간 생산계획'],['mpsVsActual','계획 대 실적'],['mpsCapacity','생산능력 검토'],
-  ]},
-  { id:'mrp', icon:<ToolOutlined />, name:'자재소요계획 (MRP)', sub:[
-    ['mrpExplosion','소요량 전개'],['mrpOrder','발주계획'],['mrpStock','재고현황'],['mrpPurchase','구매요청'],
-  ]},
-  { id:'process', icon:<SettingOutlined />, name:'공정계획 / 작업지시', sub:[
-    ['workOrder','작업지시 발행'],['gantt','일정계획 (Gantt)'],['processLoad','공정별 부하현황'],
-    ['processRoute','공정경로 관리'],['workerMaster','작업자 마스터'],['equipMaster','설비 마스터'],
-  ]},
-  { id:'crp', icon:<BankOutlined />, name:'능력계획 (CRP)', sub:[
-    ['crpEquip','설비 부하현황'],['crpManpower','인력 부하현황'],['crpLevel','부하 평준화'],
+  { id:'master', icon:<DatabaseOutlined />, name:'기준정보', sub:[
+    ['processMaster','공정마스터'],['processRoute','공정경로 관리'],['workerMaster','작업자 마스터'],['equipMaster','설비 마스터'],['unregistered','공정 미등록'],
   ]},
   { id:'result', icon:<BarChartOutlined />, name:'생산실적', sub:[
     ['resultInput','실적 입력'],['resultProcess','공정 진도현황'],['resultDefect','불량 현황'],['resultSummary','일/월별 집계'],
-  ]},
-  { id:'delivery', icon:<CarOutlined />, name:'납기관리', sub:[
-    ['deliveryPlan','출하 계획/실적'],['deliveryRate','납기 준수율'],['deliveryAlert','납기 위험 현황'],
-  ]},
-  { id:'report', icon:<FileSearchOutlined />, name:'분석 / 보고서', sub:[
-    ['reportKPI','KPI 리포트'],['reportProd','생산성 분석'],['reportProcess','공정 분석'],['reportQuality','품질 분석'],
   ]},
 ]
 
@@ -155,12 +141,13 @@ export default function App() {
     const nav = (m, s) => { setMenuKey(m); setSubKey(s); setOpenKeys(k => [...new Set([...k, m])]); pushTab(m, s) }
     switch (menuKey) {
       case 'dashboard':      return <Dashboard onNav={nav} />
-      case 'autoSchedule':   return <AutoSchedule />
+      case 'autoSchedule':   return subKey === 'workOrder' || subKey === 'gantt' || subKey === 'processLoad'
+                               ? <ProcessPlan sub={subKey} />
+                               : <AutoSchedule />
       case 'order':          return <OrderManagement sub={subKey} />
       case 'mps':       return <MasterPlan sub={subKey} />
-      case 'mrp':       return <MaterialPlan sub={subKey} />
       case 'process':   return <ProcessPlan sub={subKey} />
-      case 'crp':       return <CapacityPlan sub={subKey} />
+      case 'master':    return subKey === 'unregistered' ? <UnregisteredProcess /> : <ProcessPlan sub={subKey} />
       case 'result':    return <ProductionResult sub={subKey} />
       case 'delivery':  return <DeliveryMgmt sub={subKey} />
       case 'report':    return <Reports sub={subKey} />
@@ -208,7 +195,10 @@ export default function App() {
               mode="inline"
               selectedKeys={[subKey ? `${menuKey}|${subKey}` : menuKey]}
               openKeys={collapsed ? [] : openKeys}
-              onOpenChange={keys => setOpenKeys(keys)}
+              onOpenChange={keys => {
+                const latest = keys.find(k => !openKeys.includes(k))
+                setOpenKeys(latest ? [latest] : [])
+              }}
               onSelect={handleSelect}
               items={menuItems}
               style={{ border:'none', background:'transparent', fontSize:13 }}

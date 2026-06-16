@@ -49,21 +49,39 @@ function getCapableEquips(processName, equips) {
   )
 }
 
+// 여유시간(Slack) 계산: 납기까지 남은 일수 - 총 공정 소요일수
+function calcSlack(order, routes, baseDate) {
+  if (!order.dueDate) return 9999
+  const daysLeft = dayjs(order.dueDate).diff(baseDate, 'day')
+  const route = routes.find(r => r.productCode?.toUpperCase() === order.productCode?.toUpperCase())
+  if (!route?.processes?.length) return daysLeft
+  const qty = Number(order.remainQty || order.orderQty || 1)
+  const totalHours = route.processes.reduce((s, p) => s + (p.timePerEa||0) * qty + (p.setupTime||0), 0)
+  return daysLeft - totalHours / 8
+}
+
 /**
  * 메인 스케줄링 함수
- * 우선순위: 납기일 빠른 순 → FIFO
+ * options.priorityRule: 'EDD'(납기우선) | 'SLACK'(여유시간우선) | 'FIFO'(투입순)
  */
-export function schedule(orders, routes, workers, equips, startDate = new Date()) {
+export function schedule(orders, routes, workers, equips, startDate = new Date(), options = {}) {
+  const { priorityRule = 'EDD' } = options
   const baseDate = dayjs(startDate)
 
-  // 납기일 기준 정렬
-  const sortedOrders = [...orders]
-    .filter(o => o.orderQty > 0)
-    .sort((a, b) => {
-      if (!a.dueDate) return 1
-      if (!b.dueDate) return -1
-      return a.dueDate.localeCompare(b.dueDate)
-    })
+  const activeOrders = [...orders].filter(o => (o.remainQty || o.orderQty || 0) > 0)
+
+  const sortedOrders = activeOrders.sort((a, b) => {
+    if (priorityRule === 'SLACK') {
+      return calcSlack(a, routes, baseDate) - calcSlack(b, routes, baseDate)
+    }
+    if (priorityRule === 'FIFO') {
+      return 0
+    }
+    // EDD (기본값)
+    if (!a.dueDate) return 1
+    if (!b.dueDate) return -1
+    return a.dueDate.localeCompare(b.dueDate)
+  })
 
   // 자원별 가용 시간 추적 (workerKey → 다음 가용 dayjs)
   const workerAvail = {}
@@ -104,60 +122,75 @@ export function schedule(orders, routes, workers, equips, startDate = new Date()
     let prevEndDate = baseDate.clone()
 
     for (const proc of route.processes) {
-      const qty = Number(order.orderQty) || 1
+      const qty = Number(order.remainQty || order.orderQty) || 1
       const totalWorkHours = (proc.timePerEa || 0) * qty
       const setupHours = proc.setupTime || 0
       const totalHours = totalWorkHours + setupHours
+      const neededWorkers = Math.max(1, proc.workers || 1)
 
-      // 담당 가능 작업자 찾기
+      // 담당 가능 작업자 (주력 우선 정렬)
       const capWorkers = getCapableWorkers(proc.name, workers)
-      const capEquips = getCapableEquips(proc.name, equips)
-
-      // 가장 빨리 가용한 작업자 선택 (주력 우선)
-      let bestWorker = null
-      let bestWorkerAvail = null
+      const capEquips  = getCapableEquips(proc.name, equips)
       const prioritized = [
         ...capWorkers.filter(w => w.primary === proc.name),
         ...capWorkers.filter(w => w.primary !== proc.name),
       ]
-      for (const w of prioritized) {
-        const avail = workerAvail[w.empId] || baseDate.clone()
-        const readyDate = avail.isBefore(prevEndDate) ? prevEndDate : avail
-        if (!bestWorker || readyDate.isBefore(bestWorkerAvail)) {
-          bestWorker = w
-          bestWorkerAvail = readyDate
-        }
+
+      // ── 다수 작업자 배정 ─────────────────────────────────────
+      // 필요 인원만큼 가장 빨리 가용한 작업자 선택
+      // 모두 준비된 날이 시작일
+      const assignedWorkerList = []
+      let workerReadyDate = prevEndDate.clone()
+
+      const sortedByAvail = [...prioritized].sort((a, b) => {
+        const aA = workerAvail[a.empId] || baseDate
+        const bA = workerAvail[b.empId] || baseDate
+        return aA.isBefore(bA) ? -1 : 1
+      })
+
+      for (let i = 0; i < Math.min(neededWorkers, sortedByAvail.length); i++) {
+        const w = sortedByAvail[i]
+        const avail = (workerAvail[w.empId] || baseDate.clone())
+        const ready = avail.isBefore(prevEndDate) ? prevEndDate : avail
+        assignedWorkerList.push(w)
+        if (ready.isAfter(workerReadyDate)) workerReadyDate = ready
       }
 
-      // 가장 빨리 가용한 설비 선택
+      const bestWorker = assignedWorkerList[0] || null
+      const workerShortage = assignedWorkerList.length < neededWorkers
+
+      // ── 설비 배정 ─────────────────────────────────────────────
       let bestEquip = null
-      let bestEquipAvail = null
+      let equipReadyDate = prevEndDate.clone()
       for (const eq of capEquips) {
-        const avail = equipAvail[eq.equipId] || baseDate.clone()
-        const readyDate = avail.isBefore(prevEndDate) ? prevEndDate : avail
-        if (!bestEquip || readyDate.isBefore(bestEquipAvail)) {
+        const avail = (equipAvail[eq.equipId] || baseDate.clone())
+        const ready = avail.isBefore(prevEndDate) ? prevEndDate : avail
+        if (!bestEquip || ready.isBefore(equipReadyDate)) {
           bestEquip = eq
-          bestEquipAvail = readyDate
+          equipReadyDate = ready
         }
       }
 
-      // 시작일: 작업자와 설비 모두 준비된 날 (이전 공정 완료 이후)
-      const resourceReadyDate = bestWorkerAvail || bestEquipAvail || prevEndDate
-      const constraintDate = resourceReadyDate.isBefore(prevEndDate) ? prevEndDate : resourceReadyDate
+      // ── 시작일: 작업자 + 설비 모두 준비된 날 ─────────────────
+      let constraintDate = workerReadyDate.clone()
+      if (bestEquip && equipReadyDate.isAfter(constraintDate)) {
+        constraintDate = equipReadyDate
+      }
 
-      // 해당 작업자의 일일 가용시간
+      // ── 일일 가용시간 (다수 작업자 시 병렬 처리로 시간 단축) ──
       const workerDayHours = bestWorker
         ? (bestWorker.dayHours || 8) + (bestWorker.overtime || 0)
         : 8
-      const equipDayHours = bestEquip ? (bestEquip.dayHours || 8) : 8
-      const effectiveDayHours = Math.min(workerDayHours, equipDayHours)
+      const equipDayHours   = bestEquip ? (bestEquip.dayHours || 8) : 24
+      const parallelFactor  = assignedWorkerList.length  // 병렬 작업자 수
+      const effectiveDayHours = Math.min(workerDayHours * parallelFactor, equipDayHours)
 
-      // 근무일 기준으로 기간 계산
+      // ── 근무일 기준 기간 계산 ─────────────────────────────────
       const workDays = bestWorker?.days || ['월','화','수','목','금']
-      let startDay = nextWorkDay(constraintDate, workDays)
+      let startDay   = nextWorkDay(constraintDate, workDays)
       let remainHours = totalHours
-      let curDay = startDay.clone()
-      let endDay = startDay.clone()
+      let curDay  = startDay.clone()
+      let endDay  = startDay.clone()
 
       while (remainHours > 0) {
         if (isWorkDay(curDay, workDays)) {
@@ -167,37 +200,51 @@ export function schedule(orders, routes, workers, equips, startDate = new Date()
         if (remainHours > 0) curDay = curDay.add(1, 'day')
       }
 
+      // ── task 객체 생성 ─────────────────────────────────────────
+      const workerNames = assignedWorkerList.map(w => w.name).join(', ') || '미배정'
       const task = {
-        jobNo: order.jobNo,
-        productCode: order.productCode,
-        productName: order.productName,
+        jobNo:              order.jobNo,
+        productCode:        order.productCode,
+        productName:        order.productName,
         qty,
-        dueDate: order.dueDate,
-        seq: proc.seq,
-        processName: proc.name,
-        assignedWorker: bestWorker ? `${bestWorker.name}(${bestWorker.empId})` : '미배정',
+        dueDate:            order.dueDate,
+        seq:                proc.seq,
+        processName:        proc.name,
+        neededWorkers,
+        assignedWorkerCount: assignedWorkerList.length,
+        assignedWorker:     workerNames,
         assignedWorkerName: bestWorker?.name || null,
-        assignedEquip: bestEquip ? bestEquip.name : (proc.equip || '미배정'),
-        startDate: startDay.format('YYYY-MM-DD'),
-        endDate: endDay.format('YYYY-MM-DD'),
-        hours: totalWorkHours,
+        assignedWorkerList: assignedWorkerList.map(w => w.name),
+        assignedEquip:      bestEquip ? bestEquip.name : (capEquips.length === 0 ? '설비불필요' : '미배정'),
+        startDate:          startDay.format('YYYY-MM-DD'),
+        endDate:            endDay.format('YYYY-MM-DD'),
+        hours:              totalWorkHours,
         setupHours,
         totalHours,
         status: '예정',
       }
 
-      // 납기 초과 경고
+      // ── 경고 처리 ─────────────────────────────────────────────
+      const warnings = []
       if (order.dueDate && endDay.isAfter(dayjs(order.dueDate))) {
-        task.warning = `납기(${order.dueDate}) 초과 예상`
+        warnings.push(`납기(${order.dueDate}) 초과 예상`)
         task.status = '위험'
       }
+      if (assignedWorkerList.length === 0) {
+        warnings.push(`${proc.name} 담당 가능 작업자 없음`)
+        task.status = task.status === '위험' ? '위험' : '주의'
+      } else if (workerShortage) {
+        warnings.push(`필요인원 ${neededWorkers}명 중 ${assignedWorkerList.length}명만 배정`)
+        if (task.status === '예정') task.status = '주의'
+      }
+      if (warnings.length) task.warning = warnings.join(' / ')
 
       tasks.push(task)
 
-      // 자원 가용시간 업데이트
+      // ── 자원 가용시간 업데이트 ────────────────────────────────
       const nextAvail = endDay.add(1, 'day')
-      if (bestWorker) workerAvail[bestWorker.empId] = nextAvail
-      if (bestEquip)  equipAvail[bestEquip.equipId] = nextAvail
+      assignedWorkerList.forEach(w => { workerAvail[w.empId] = nextAvail })
+      if (bestEquip) equipAvail[bestEquip.equipId] = nextAvail
 
       prevEndDate = endDay.add(1, 'day')
     }
