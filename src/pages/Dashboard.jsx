@@ -1,248 +1,179 @@
-import { Row, Col, Card, Statistic, Table, Tag, Progress, Alert, Badge, Space, Button, Typography, Divider } from 'antd'
-import {
-  ArrowUpOutlined, ArrowDownOutlined, ExclamationCircleOutlined,
-  CheckCircleOutlined, ClockCircleOutlined, WarningOutlined,
-} from '@ant-design/icons'
+import { Row, Col, Card, Statistic, Table, Tag, Badge, Space, Typography } from 'antd'
+import { WarningOutlined, CheckCircleOutlined, ClockCircleOutlined, FileTextOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 
 const { Title, Text } = Typography
 
-// ─── KPI 데이터 ───
 const KPI = [
-  { label:'이번달 수주잔량', value:48,   suffix:'건', extra:'금액 12.5억원', color:'#3B82F6', trend:+3,   bg:'#EFF6FF', icon:'📋' },
-  { label:'금주 생산진행률',  value:73,   suffix:'%',  extra:'목표 85% 대비', color:'#F59E0B', trend:-12,  bg:'#FFFBEB', icon:'🏭' },
-  { label:'납기 준수율 (월)', value:94.2, suffix:'%',  extra:'전월 91.8%',   color:'#10B981', trend:+2.4, bg:'#ECFDF5', icon:'✅' },
-  { label:'설비 가동률',     value:87.3, suffix:'%',  extra:'가동 7 / 정지 1', color:'#8B5CF6', trend:+1.2, bg:'#F5F3FF', icon:'⚙️' },
+  { label: '전체 주문 잔량', value: 48, suffix: '건', extra: '진행중 22 · 신규 15 · 완료 11', color: '#3B82F6', icon: <FileTextOutlined /> },
+  { label: '납기 D-7 이내', value: 7,  suffix: '건', extra: '이 중 지연 3건', color: '#EF4444', icon: <WarningOutlined /> },
+  { label: '공정 미등록',   value: 12, suffix: '종', extra: '등록 완료 36종', color: '#F59E0B', icon: <ClockCircleOutlined /> },
+  { label: '이번달 완료',   value: 15, suffix: '건', extra: '목표 20건 대비 75%', color: '#10B981', icon: <CheckCircleOutlined /> },
 ]
 
-// ─── 차트 옵션: 주차별 계획 vs 실적 ───
-const planActualOption = {
-  tooltip: { trigger:'axis', axisPointer:{ type:'shadow' }, formatter: params => params.map(p=>`${p.seriesName}: ${p.value}EA`).join('<br/>') },
-  legend: { data:['계획','실적'], bottom:0, icon:'roundRect', itemWidth:12, itemHeight:12, textStyle:{fontSize:12} },
-  grid: { left:10, right:10, top:16, bottom:32, containLabel:true },
-  xAxis: {
-    type:'category',
-    data:['1주 (5/1~7)','2주 (5/8~14)','3주 (5/15~21)','4주 (5/22~31)'],
-    axisLine:{lineStyle:{color:'#E2E8F0'}}, axisLabel:{fontSize:11,color:'#64748B'},
-    axisTick:{show:false},
-  },
-  yAxis: { type:'value', name:'EA', axisLine:{show:false}, axisTick:{show:false}, splitLine:{lineStyle:{color:'#F1F5F9'}}, axisLabel:{fontSize:11,color:'#64748B'} },
-  series: [
-    { name:'계획', type:'bar', data:[22,20,18,10], barGap:'0%', barMaxWidth:28,
-      itemStyle:{color:'#BAE6FD',borderRadius:[4,4,0,0]},
-      label:{show:true,position:'top',fontSize:10,color:'#64748B',formatter:'{c}'},
-    },
-    { name:'실적', type:'bar', data:[22,18,7,0], barMaxWidth:28,
-      itemStyle:{color:'#3B82F6',borderRadius:[4,4,0,0]},
-      label:{show:true,position:'top',fontSize:10,color:'#3B82F6',formatter:'{c}'},
-    },
-  ],
-}
-
-// ─── 차트 옵션: 공정별 부하율 (가로 막대) ───
-const processLoadOption = {
-  tooltip: { trigger:'axis', axisPointer:{type:'shadow'}, formatter: p => `${p[0].name}: <b>${p[0].value}%</b>` },
-  grid: { left:10, right:50, top:8, bottom:8, containLabel:true },
-  xAxis: { type:'value', max:100, axisLabel:{formatter:'{value}%',fontSize:11,color:'#64748B'}, axisLine:{show:false}, axisTick:{show:false}, splitLine:{lineStyle:{color:'#F1F5F9'}} },
+const ddayOption = {
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `${p[0].name}: <b>${p[0].value}건</b>` },
+  grid: { left: 10, right: 20, top: 12, bottom: 8, containLabel: true },
+  xAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: '#F1F5F9' } }, axisLabel: { fontSize: 11, color: '#94A3B8' } },
   yAxis: {
-    type:'category',
-    data:['검사/출하','조립','도장','용접','프레스/벤딩','레이저 절단'],
-    axisLabel:{fontSize:12,color:'#374151',fontWeight:500}, axisLine:{show:false}, axisTick:{show:false},
+    type: 'category',
+    data: ['여유 (D-30+)', 'D-30 이내', 'D-14 이내', 'D-7 이내', '지연'],
+    axisLabel: { fontSize: 12, color: '#374151', fontWeight: 500 },
+    axisLine: { show: false }, axisTick: { show: false },
   },
   series: [{
-    type:'bar', data:[40,55,61,85,78,92],
-    barMaxWidth:18, barCategoryGap:'40%',
-    itemStyle:{
-      borderRadius:[0,4,4,0],
-      color: p => p.value>90 ? '#EF4444' : p.value>75 ? '#F59E0B' : '#10B981',
-    },
-    label:{ show:true, position:'right', fontSize:11, fontWeight:700, formatter:'{c}%',
-      color: p => p.value>90 ? '#EF4444' : p.value>75 ? '#F59E0B' : '#10B981' },
-    markLine:{
-      data:[{xAxis:90,name:'위험선'},{xAxis:75,name:'주의선'}],
-      symbol:'none',
-      lineStyle:[{color:'#EF4444',type:'dashed',width:1},{color:'#F59E0B',type:'dashed',width:1}],
-      label:{show:false},
-    },
+    type: 'bar', barMaxWidth: 22, barCategoryGap: '35%',
+    data: [
+      { value: 9,  itemStyle: { color: '#BFDBFE', borderRadius: [0, 4, 4, 0] } },
+      { value: 18, itemStyle: { color: '#93C5FD', borderRadius: [0, 4, 4, 0] } },
+      { value: 11, itemStyle: { color: '#F59E0B', borderRadius: [0, 4, 4, 0] } },
+      { value: 7,  itemStyle: { color: '#F97316', borderRadius: [0, 4, 4, 0] } },
+      { value: 3,  itemStyle: { color: '#EF4444', borderRadius: [0, 4, 4, 0] } },
+    ],
+    label: { show: true, position: 'right', fontSize: 11, fontWeight: 700, color: '#374151', formatter: '{c}건' },
   }],
 }
 
-// ─── 차트 옵션: 납기 준수율 추이 ───
-const deliveryRateOption = {
-  tooltip: { trigger:'axis', formatter: p => `${p[0].axisValue}: <b>${p[0].value}%</b>` },
-  grid: { left:10, right:10, top:16, bottom:8, containLabel:true },
-  xAxis: { type:'category', data:['1월','2월','3월','4월','5월'], axisLine:{lineStyle:{color:'#E2E8F0'}}, axisLabel:{fontSize:11,color:'#64748B'}, axisTick:{show:false} },
-  yAxis: { type:'value', min:86, max:100, axisLabel:{formatter:'{value}%',fontSize:11,color:'#64748B'}, axisLine:{show:false}, axisTick:{show:false}, splitLine:{lineStyle:{color:'#F1F5F9'}} },
+const donutOption = {
+  tooltip: { trigger: 'item', formatter: '{b}: {c}건 ({d}%)' },
+  legend: { bottom: 0, icon: 'circle', itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 12, color: '#374151' } },
   series: [{
-    type:'line', data:[90.6,96.4,94.3,92.7,94.2],
-    smooth:true,
-    symbol:'circle', symbolSize:7,
-    lineStyle:{color:'#3B82F6',width:2.5},
-    itemStyle:{color:'#3B82F6',borderColor:'#fff',borderWidth:2},
-    areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(59,130,246,0.2)'},{offset:1,color:'rgba(59,130,246,0)'}]}},
-    markLine:{
-      data:[{yAxis:95,name:'목표(95%)'}],
-      symbol:'none',
-      lineStyle:{color:'#10B981',type:'dashed',width:1.5},
-      label:{formatter:'목표 95%',color:'#10B981',fontSize:11},
-    },
+    type: 'pie', radius: ['48%', '72%'], center: ['50%', '44%'],
+    label: { show: false },
+    data: [
+      { value: 22, name: '진행중', itemStyle: { color: '#3B82F6' } },
+      { value: 15, name: '신규',   itemStyle: { color: '#94A3B8' } },
+      { value: 11, name: '완료',   itemStyle: { color: '#10B981' } },
+    ],
   }],
 }
 
-// ─── 금주 작업지시 테이블 컬럼 ───
-const woColumns = [
-  { title:'작업지시', dataIndex:'wo', key:'wo', width:130,
-    render: v => <Text strong style={{color:'#3B82F6',fontSize:12}}>{v}</Text> },
-  { title:'제품명', dataIndex:'product', key:'product',
-    render: v => <Text strong>{v}</Text> },
-  { title:'고객사', dataIndex:'customer', key:'customer',
-    render: v => <Text type="secondary" style={{fontSize:12}}>{v}</Text> },
-  { title:'계획', dataIndex:'plan', key:'plan', width:60, align:'center' },
-  { title:'완료', dataIndex:'done', key:'done', width:60, align:'center',
-    render: v => <Text strong style={{color:'#10B981'}}>{v}</Text> },
-  { title:'진행', dataIndex:'ing', key:'ing', width:60, align:'center',
-    render: v => v > 0 ? <Text strong style={{color:'#F59E0B'}}>{v}</Text> : <Text type="secondary">—</Text> },
-  { title:'진행률', dataIndex:'rate', key:'rate', width:130,
-    render: v => (
-      <Space>
-        <Progress percent={v} size="small" style={{width:80,margin:0}}
-          strokeColor={v===100?'#10B981':v>60?'#3B82F6':'#F59E0B'}
-          trailColor="#F1F5F9" showInfo={false} />
-        <Text style={{fontSize:11,fontWeight:700,color:v===100?'#10B981':v>60?'#3B82F6':'#F59E0B'}}>{v}%</Text>
-      </Space>
-    ),
+const monthlyOption = {
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `${p[0].axisValue}: <b>${p[0].value}건</b>` },
+  grid: { left: 10, right: 10, top: 16, bottom: 8, containLabel: true },
+  xAxis: {
+    type: 'category', data: ['1월', '2월', '3월', '4월', '5월', '6월'],
+    axisLine: { lineStyle: { color: '#E2E8F0' } }, axisLabel: { fontSize: 11, color: '#64748B' }, axisTick: { show: false },
   },
-  { title:'상태', dataIndex:'status', key:'status',
+  yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: '#F1F5F9' } }, axisLabel: { fontSize: 11, color: '#64748B' } },
+  series: [{
+    type: 'bar', data: [31, 28, 35, 42, 48, 0], barMaxWidth: 28,
+    itemStyle: { color: p => p.dataIndex === 5 ? '#E2E8F0' : '#3B82F6', borderRadius: [4, 4, 0, 0] },
+    label: { show: true, position: 'top', fontSize: 10, color: '#64748B', formatter: p => p.value > 0 ? p.value : '' },
+  }],
+}
+
+const urgentColumns = [
+  { title: '제번',   dataIndex: 'jobNo',       width: 130, render: v => <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{v}</span> },
+  { title: '품명',   dataIndex: 'productName', ellipsis: true },
+  { title: '주문PT', dataIndex: 'productCode', width: 130, render: v => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
+  { title: '수량',   dataIndex: 'qty',         width: 60, align: 'center' },
+  { title: '납기일', dataIndex: 'dueDate',     width: 100 },
+  {
+    title: 'D-day', dataIndex: 'dday', width: 80, align: 'center',
     render: v => {
-      const map = {green:['완료','success'],orange:['진행중','warning'],blue:['일부완료','processing'],gray:['대기','default']}
-      const [label, color] = map[v] || ['—','default']
-      return <Badge status={color} text={<Text style={{fontSize:12}}>{label}</Text>} />
+      const color = v < 0 ? '#EF4444' : v <= 7 ? '#F97316' : '#F59E0B'
+      const label = v < 0 ? `D+${Math.abs(v)}` : `D-${v}`
+      return <Tag color={color} style={{ fontWeight: 700, fontSize: 12, margin: 0 }}>{label}</Tag>
+    },
+  },
+  {
+    title: '상태', dataIndex: 'status', width: 80, align: 'center',
+    render: v => {
+      const map = { '지연': 'error', '임박': 'warning', '진행': 'processing' }
+      return <Badge status={map[v] || 'default'} text={v} />
     },
   },
 ]
 
-const woData = [
-  { key:1, wo:'WO-2605-001', product:'EL-2000 카케이스',  customer:'현대엘리베이터', plan:12, done:10, ing:1, wait:1, rate:83,  status:'orange' },
-  { key:2, wo:'WO-2605-002', product:'HH-프레임 ASSY',    customer:'현대중공업',     plan:8,  done:5,  ing:2, wait:1, rate:62,  status:'orange' },
-  { key:3, wo:'WO-2605-003', product:'제관 판넬 A타입',   customer:'삼성중공업',     plan:20, done:20, ing:0, wait:0, rate:100, status:'green'  },
-  { key:4, wo:'WO-2605-004', product:'구조체 브라켓 SET', customer:'두산에너빌리티', plan:15, done:8,  ing:4, wait:3, rate:53,  status:'orange' },
-  { key:5, wo:'WO-2605-005', product:'도어프레임 EL',     customer:'현대엘리베이터', plan:6,  done:0,  ing:0, wait:6, rate:0,   status:'gray'   },
-]
-
-const ALERTS = [
-  { type:'error',   icon:<ExclamationCircleOutlined />, msg:'WO-2605-004 납기 위험 — 두산에너빌리티 잔여 7건, 납기 D-2' },
-  { type:'warning', icon:<WarningOutlined />,            msg:'레이저 절단 설비 과부하 (92%) — 야근 또는 외주 검토 필요' },
-  { type:'warning', icon:<WarningOutlined />,            msg:'MRP 발주 미확정 3건 — SS400 / STS304 납기 D-7 초과 위험' },
-  { type:'info',    icon:<ClockCircleOutlined />,        msg:'신규 수주 등록 — WO-2606-001 현대엘리베이터 EL-2500' },
-  { type:'success', icon:<CheckCircleOutlined />,        msg:'WO-2605-003 출하완료 — 삼성중공업 제관 판넬 A타입 20EA' },
+const urgentData = [
+  { key: 1, jobNo: 'DK26D-0312', productName: 'M/C BEAM & SILL BRACKET', productCode: 'DM09A029A', qty: 4, dueDate: '2026-05-30', dday: -2, status: '지연' },
+  { key: 2, jobNo: 'DK26D-0405', productName: 'ROPE END BEAM BRACKET',   productCode: 'DM09A319A', qty: 2, dueDate: '2026-06-02', dday: 1,  status: '임박' },
+  { key: 3, jobNo: 'DK26D-0501', productName: 'Y/C BEAM & HITCH BEAM',   productCode: 'DM09A029B', qty: 1, dueDate: '2026-06-03', dday: 2,  status: '임박' },
+  { key: 4, jobNo: 'DK26D-0318', productName: 'M/C BEAM (DOWN)',          productCode: 'DM09A373A', qty: 3, dueDate: '2026-06-05', dday: 4,  status: '진행' },
+  { key: 5, jobNo: 'DK26D-0422', productName: 'CAR FRAME ASSY',           productCode: 'DM09B102A', qty: 1, dueDate: '2026-06-06', dday: 5,  status: '진행' },
+  { key: 6, jobNo: 'DK26D-0390', productName: 'GUIDE RAIL BRACKET',       productCode: 'DM09C055A', qty: 6, dueDate: '2026-06-07', dday: 6,  status: '진행' },
+  { key: 7, jobNo: 'DK26D-0461', productName: 'COUNTER WEIGHT BRACKET',   productCode: 'DM09A210B', qty: 2, dueDate: '2026-06-08', dday: 7,  status: '진행' },
 ]
 
 export function Dashboard({ onNav }) {
+  const today = new Date()
+  const dateStr = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일`
+
   return (
     <div>
-      <div style={{ marginBottom:20 }}>
-        <Title level={4} style={{ margin:0, color:'#0F172A' }}>생산계획 대시보드</Title>
-        <Text type="secondary">전체 생산현황 및 핵심 KPI 모니터링 — 2026년 5월</Text>
+      <div style={{ marginBottom: 20 }}>
+        <Title level={4} style={{ margin: 0, color: '#0F172A' }}>생산계획 대시보드</Title>
+        <Text type="secondary">{dateStr} 기준 — 수주 현황 및 납기 모니터링</Text>
       </div>
 
-      {/* ─── KPI 카드 ─── */}
-      <Row gutter={[16,16]} style={{ marginBottom:16 }}>
-        {KPI.map((k,i) => (
+      {/* KPI */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        {KPI.map((k, i) => (
           <Col key={i} xs={24} sm={12} xl={6}>
-            <Card
-              bordered={false}
-              style={{ borderRadius:12, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', overflow:'hidden', borderTop:`3px solid ${k.color}` }}
-              styles={{ body:{ padding:'18px 20px' } }}
+            <Card bordered={false}
+              style={{ borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.07)', borderTop: `3px solid ${k.color}` }}
+              styles={{ body: { padding: '16px 20px' } }}
             >
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <Text type="secondary" style={{ fontSize:12, fontWeight:600 }}>{k.label}</Text>
-                  <Statistic
-                    value={k.value}
-                    suffix={k.suffix}
-                    valueStyle={{ fontSize:28, fontWeight:800, color:'#0F172A', lineHeight:1.2 }}
-                    style={{ marginTop:4 }}
-                  />
-                  <Space style={{ marginTop:4 }}>
-                    {k.trend > 0
-                      ? <Text style={{ fontSize:12, color:'#10B981', fontWeight:600 }}><ArrowUpOutlined /> +{k.trend}{k.suffix}</Text>
-                      : <Text style={{ fontSize:12, color:'#EF4444', fontWeight:600 }}><ArrowDownOutlined /> {k.trend}{k.suffix}</Text>
-                    }
-                    <Text type="secondary" style={{ fontSize:12 }}>{k.extra}</Text>
-                  </Space>
+                  <Text style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>{k.label}</Text>
+                  <Statistic value={k.value} suffix={k.suffix}
+                    valueStyle={{ fontSize: 30, fontWeight: 800, color: k.color, lineHeight: 1.2 }}
+                    style={{ marginTop: 2 }} />
+                  <Text type="secondary" style={{ fontSize: 12 }}>{k.extra}</Text>
                 </div>
-                <span style={{ fontSize:32, opacity:0.15 }}>{k.icon}</span>
+                <span style={{ fontSize: 28, color: k.color, opacity: 0.25 }}>{k.icon}</span>
               </div>
             </Card>
           </Col>
         ))}
       </Row>
 
-      {/* ─── 차트 행 ─── */}
-      <Row gutter={[16,16]} style={{ marginBottom:16 }}>
-        <Col xs={24} lg={11}>
-          <Card
-            title={<Text strong>주차별 생산계획 vs 실적 (EA)</Text>}
-            bordered={false}
-            style={{ borderRadius:12, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', height:'100%' }}
-          >
-            <ReactECharts option={planActualOption} style={{ height:200 }} />
+      {/* 차트 */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={10}>
+          <Card title={<Text strong>납기 D-day 분포</Text>} bordered={false}
+            style={{ borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.07)', height: '100%' }}>
+            <ReactECharts option={ddayOption} style={{ height: 210 }} />
           </Card>
         </Col>
         <Col xs={24} lg={7}>
-          <Card
-            title={<Text strong>공정별 부하율</Text>}
-            bordered={false}
-            style={{ borderRadius:12, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', height:'100%' }}
-            extra={<Button size="small" type="link" onClick={()=>onNav?.('crp','crpEquip')}>상세 →</Button>}
-          >
-            <ReactECharts option={processLoadOption} style={{ height:200 }} />
+          <Card title={<Text strong>생산 진행 현황</Text>} bordered={false}
+            style={{ borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.07)', height: '100%' }}>
+            <ReactECharts option={donutOption} style={{ height: 210 }} />
           </Card>
         </Col>
-        <Col xs={24} lg={6}>
-          <Card
-            title={<Text strong>납기준수율 추이</Text>}
-            bordered={false}
-            style={{ borderRadius:12, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', height:'100%' }}
-          >
-            <ReactECharts option={deliveryRateOption} style={{ height:200 }} />
+        <Col xs={24} lg={7}>
+          <Card title={<Text strong>월별 주문 추이</Text>} bordered={false}
+            style={{ borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.07)', height: '100%' }}>
+            <ReactECharts option={monthlyOption} style={{ height: 210 }} />
           </Card>
         </Col>
       </Row>
 
-      {/* ─── 테이블 + 알림 ─── */}
-      <Row gutter={[16,16]}>
-        <Col xs={24} xl={16}>
-          <Card
-            title={<Text strong>금주 작업지시 현황</Text>}
-            bordered={false}
-            style={{ borderRadius:12, boxShadow:'0 1px 4px rgba(0,0,0,0.07)' }}
-            extra={<Button size="small" onClick={()=>onNav?.('process','gantt')}>Gantt 보기</Button>}
-          >
-            <Table
-              columns={woColumns}
-              dataSource={woData}
-              pagination={false}
-              size="small"
-              scroll={{ x:600 }}
-            />
-          </Card>
-        </Col>
-
-        <Col xs={24} xl={8}>
-          <Card
-            title={<Text strong>알림 / 이슈</Text>}
-            bordered={false}
-            style={{ borderRadius:12, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', height:'100%' }}
-          >
-            <Space direction="vertical" style={{ width:'100%' }} size={8}>
-              {ALERTS.map((a,i) => (
-                <Alert key={i} type={a.type} message={a.msg} icon={a.icon} showIcon style={{ fontSize:12, padding:'8px 10px', borderRadius:8 }} />
-              ))}
-            </Space>
-          </Card>
-        </Col>
-      </Row>
+      {/* 납기 임박 테이블 */}
+      <Card title={
+        <Space>
+          <Text strong>납기 임박 현황</Text>
+          <Tag color="error">지연 3건</Tag>
+          <Tag color="warning">D-7 이내 7건</Tag>
+        </Space>
+      } bordered={false} style={{ borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
+        <Table
+          columns={urgentColumns}
+          dataSource={urgentData}
+          pagination={false}
+          size="small"
+          bordered
+          scroll={{ x: 700 }}
+          rowClassName={r => r.dday < 0 ? 'row-overdue' : r.dday <= 7 ? 'row-urgent' : ''}
+        />
+        <style>{`
+          .row-overdue td { background: #FFF0F0 !important; }
+          .row-urgent  td { background: #FFFBEB !important; }
+        `}</style>
+      </Card>
     </div>
   )
 }
