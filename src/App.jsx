@@ -7,6 +7,7 @@ import {
   UserOutlined, LogoutOutlined, BellOutlined,
   RightOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
+import { Login }             from './pages/Login.jsx'
 import { Dashboard }         from './pages/Dashboard.jsx'
 import { OrderManagement }   from './pages/order/OrderManagement.jsx'
 import { MasterPlan }        from './pages/mps/MasterPlan.jsx'
@@ -82,6 +83,21 @@ const today = new Date()
 const dateStr = `${today.getFullYear()}.${String(today.getMonth()+1).padStart(2,'0')}.${String(today.getDate()).padStart(2,'0')} (${['일','월','화','수','목','금','토'][today.getDay()]})`
 
 export default function App() {
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('pp_user') || 'null') } catch { return null }
+  })
+
+  if (!user) {
+    return <Login onLogin={(account) => {
+      localStorage.setItem('pp_user', JSON.stringify(account))
+      setUser(account)
+    }} />
+  }
+
+  return <AppMain user={user} onLogout={() => { localStorage.removeItem('pp_user'); setUser(null) }} />
+}
+
+function AppMain({ user, onLogout }) {
   const [menuKey, setMenuKey]     = useState('dashboard')
   const [subKey, setSubKey]       = useState('')
   const [openKeys, setOpenKeys]   = useState(['mps'])
@@ -211,12 +227,18 @@ export default function App() {
               padding:'12px 16px', borderTop:'1px solid rgba(255,255,255,0.07)',
               display:'flex', alignItems:'center', gap:8,
             }}>
-              <Avatar size={28} style={{ background:'linear-gradient(135deg,#3B82F6,#7C3AED)', flexShrink:0, fontSize:11 }}>관</Avatar>
+              <Avatar size={28} style={{ background:'linear-gradient(135deg,#3B82F6,#7C3AED)', flexShrink:0, fontSize:11 }}>
+                {user.name[0]}
+              </Avatar>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:700, color:'#fff' }}>관리자</div>
-                <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)' }}>생산계획팀</div>
+                <div style={{ fontSize:13, fontWeight:700, color:'#fff' }}>{user.name}</div>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)' }}>{user.dept}</div>
               </div>
-              <LogoutOutlined style={{ color:'rgba(255,255,255,0.3)', cursor:'pointer', fontSize:14 }} />
+              <LogoutOutlined
+                onClick={onLogout}
+                style={{ color:'rgba(255,255,255,0.4)', cursor:'pointer', fontSize:14 }}
+                title="로그아웃"
+              />
             </div>
           )}
         </Sider>
