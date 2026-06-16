@@ -59,8 +59,8 @@ const MENUS = [
     ['generate','계획 생성'],['gantt','일정계획 (Gantt)'],
     ['weekPlan','주간 생산계획'],['dayPlan','일일 생산계획'],['workerPlan','작업자별 생산계획'],
   ]},
-  { id:'order',   icon:<FileTextOutlined />, name:'수주관리', sub:[
-    ['orderList','수주현황'],['orderInput','수주등록'],['deliveryCheck','납기검토'],
+  { id:'order',   icon:<FileTextOutlined />, name:'주문관리', sub:[
+    ['orderList','주문현황'],['orderInput','주문등록'],['deliveryCheck','납기검토'],
   ]},
   { id:'master', icon:<DatabaseOutlined />, name:'기준정보', sub:[
     ['processMaster','공정마스터'],['processRoute','공정경로 관리'],['workerMaster','작업자 마스터'],['equipMaster','설비 마스터'],['unregistered','공정 미등록'],
