@@ -2,8 +2,12 @@ import { useState, useCallback, useEffect } from 'react'
 import {
   Table, Tag, Button, Space, Form, Input, Select, DatePicker, Row, Col, Card,
   Progress, Typography, Badge, Statistic, Divider, Alert, Modal, message, Tooltip,
-  Steps, Empty, Popconfirm, Drawer, Tabs,
+  Steps, Empty, Popconfirm, Drawer, Tabs, Spin,
 } from 'antd'
+import {
+  fetchOrders, upsertOrders, insertOrder, deleteOrderById, deleteAllOrders,
+  fetchBatches, saveBatch, deleteBatch,
+} from '../../api/db.js'
 import {
   PlusOutlined, SearchOutlined, DownloadOutlined, WarningOutlined,
   InboxOutlined, CheckCircleOutlined, FileExcelOutlined, DeleteOutlined,
@@ -115,19 +119,6 @@ function calcDday(dateStr) {
   return Math.round((due - today) / 86400000)
 }
 
-// ─── LocalStorage 저장/불러오기 ───────────────────────────────────
-const LS_KEY = 'pp_order_batches'
-function lsGetBatches() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]') } catch { return [] }
-}
-function lsSaveBatch(label, rows) {
-  const batches = lsGetBatches().filter(b => b.label !== label)
-  batches.unshift({ label, rows, savedAt: new Date().toLocaleString('ko-KR'), count: rows.length })
-  localStorage.setItem(LS_KEY, JSON.stringify(batches.slice(0, 30)))
-}
-function lsDeleteBatch(label) {
-  localStorage.setItem(LS_KEY, JSON.stringify(lsGetBatches().filter(b => b.label !== label)))
-}
 
 // 납기일 범위 자동 감지 → "YYYYMMDD~YYYYMMDD" 형식 라벨
 function autoLabel(rows) {
@@ -181,7 +172,7 @@ function ExcelUploadZone({ onImport }) {
       const d = calcDday(v)
       return <Space size={3}>
         <Text>{v}</Text>
-        {d != null && v && <Tag color={d<0?'error':d<=3?'warning':'default'} style={{fontSize:10,padding:'0 3px',margin:0}}>D{d>=0?'-':'+'}{Math.abs(d)}</Tag>}
+        {d != null && v && <Tag color={d<=1?'error':d<=3?'warning':'default'} style={{fontSize:10,padding:'0 3px',margin:0}}>D{d>=0?'-':'+'}{Math.abs(d)}</Tag>}
       </Space>
     }},
     { title:'거래선', dataIndex:'customer', width:130, ellipsis:true },
@@ -225,7 +216,7 @@ function ExcelUploadZone({ onImport }) {
         title={
           <Space>
             <FileExcelOutlined style={{color:'#10B981'}} />
-            <Text strong>ERP 수주 미리보기</Text>
+            <Text strong>ERP 주문 미리보기</Text>
             {preview && <Tag color="blue">{preview.filename}</Tag>}
             {preview && <Tag color="processing">{preview.rows.length}건</Tag>}
           </Space>
@@ -262,47 +253,62 @@ function ExcelUploadZone({ onImport }) {
 
 // ─── 저장된 주문 묶음 ─────────────────────────────────────────────
 function SavedBatches({ onLoad }) {
-  const [batches, setBatches] = useState(lsGetBatches)
-  const refresh = () => setBatches(lsGetBatches())
+  const [batches, setBatches] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  const handleLoad = (b) => {
-    onLoad(b.rows, b.label)
-    message.success(`"${b.label}" ${b.count}건 불러왔습니다.`)
+  const refresh = async () => {
+    setLoading(true)
+    try { setBatches(await fetchBatches()) } catch { /* silent */ } finally { setLoading(false) }
   }
-  const handleDelete = (label) => {
-    lsDeleteBatch(label)
-    refresh()
-    message.success(`"${label}" 삭제 완료`)
+
+  useEffect(() => { refresh() }, [])
+
+  const handleLoad = async (b) => {
+    try {
+      const rows = await fetchOrders(b.label)
+      onLoad(rows, b.label)
+      message.success(`"${b.label}" ${b.count}건 불러왔습니다.`)
+    } catch { message.error('불러오기 실패') }
+  }
+
+  const handleDelete = async (label) => {
+    try {
+      await deleteBatch(label)
+      refresh()
+      message.success(`"${label}" 삭제 완료`)
+    } catch { message.error('삭제 실패') }
   }
 
   return (
     <Card bordered={false} size="small"
       style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',height:'100%'}}
       title={<Space><CalendarOutlined style={{color:'#3B82F6'}} /><Text strong style={{fontSize:13}}>저장된 주문 묶음</Text></Space>}>
-      {batches.length === 0
-        ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{fontSize:12}}>저장된 묶음이 없습니다.<br/>엑셀 가져오기 후 저장하세요.</Text>} style={{margin:'16px 0'}} />
-        : <div style={{display:'flex',flexDirection:'column',gap:6}}>
-            {batches.map(b => (
-              <div key={b.label} style={{
-                display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',
-                border:'1px solid #E2E8F0',borderRadius:8,padding:'8px 12px',
-                background:'#F8FAFC',cursor:'pointer',transition:'background 0.15s',
-              }}
-                onMouseEnter={e=>e.currentTarget.style.background='#EFF6FF'}
-                onMouseLeave={e=>e.currentTarget.style.background='#F8FAFC'}
-              >
-                <CalendarOutlined style={{color:'#3B82F6',fontSize:13,flexShrink:0}} />
-                <Text strong style={{fontSize:12,fontFamily:'monospace',flex:1,minWidth:0}}>{b.label}</Text>
-                <Tag color="blue" style={{margin:0,fontSize:11,flexShrink:0}}>{b.count}건</Tag>
-                <Text type="secondary" style={{fontSize:10,flexShrink:0}}>{b.savedAt}</Text>
-                <Button size="small" type="primary" ghost style={{padding:'0 8px',height:22,fontSize:11,flexShrink:0}} onClick={() => handleLoad(b)}>불러오기</Button>
-                <Popconfirm title={`"${b.label}" 삭제?`} okText="삭제" cancelText="취소" okButtonProps={{danger:true}} onConfirm={() => handleDelete(b.label)}>
-                  <Button size="small" type="text" danger icon={<DeleteOutlined />} style={{padding:'0 2px',height:22,flexShrink:0}} />
-                </Popconfirm>
-              </div>
-            ))}
-          </div>
-      }
+      <Spin spinning={loading}>
+        {batches.length === 0 && !loading
+          ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{fontSize:12}}>저장된 묶음이 없습니다.<br/>엑셀 가져오기 후 저장하세요.</Text>} style={{margin:'16px 0'}} />
+          : <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {batches.map(b => (
+                <div key={b.label} style={{
+                  display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',
+                  border:'1px solid #E2E8F0',borderRadius:8,padding:'8px 12px',
+                  background:'#F8FAFC',cursor:'pointer',transition:'background 0.15s',
+                }}
+                  onMouseEnter={e=>e.currentTarget.style.background='#EFF6FF'}
+                  onMouseLeave={e=>e.currentTarget.style.background='#F8FAFC'}
+                >
+                  <CalendarOutlined style={{color:'#3B82F6',fontSize:13,flexShrink:0}} />
+                  <Text strong style={{fontSize:12,fontFamily:'monospace',flex:1,minWidth:0}}>{b.label}</Text>
+                  <Tag color="blue" style={{margin:0,fontSize:11,flexShrink:0}}>{b.count}건</Tag>
+                  <Text type="secondary" style={{fontSize:10,flexShrink:0}}>{b.savedAt}</Text>
+                  <Button size="small" type="primary" ghost style={{padding:'0 8px',height:22,fontSize:11,flexShrink:0}} onClick={() => handleLoad(b)}>불러오기</Button>
+                  <Popconfirm title={`"${b.label}" 삭제?`} okText="삭제" cancelText="취소" okButtonProps={{danger:true}} onConfirm={() => handleDelete(b.label)}>
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />} style={{padding:'0 2px',height:22,flexShrink:0}} />
+                  </Popconfirm>
+                </div>
+              ))}
+            </div>
+        }
+      </Spin>
     </Card>
   )
 }
@@ -319,18 +325,22 @@ const DUMMY_ORDERS = [
   { key:'d5', jobNo:'26T0520E05', productCode:'DFR-EL',    productName:'도어프레임 EL',     spec:'T2.3 AL',       orderQty:6,  remainQty:6,  orderDate:'2026-05-20', dueDate:'2026-06-10', customer:'현대엘리베이터',   dept:'ST', status:'대기', progress:0  },
 ]
 
-const LS_ORDERS_KEY = 'pp_orders'
-function lsGetOrders() {
-  try { return JSON.parse(localStorage.getItem(LS_ORDERS_KEY) || 'null') } catch { return null }
-}
-
 function OrderList() {
-  const [orders, setOrders] = useState(() => lsGetOrders() ?? DUMMY_ORDERS)
+  const [orders, setOrders] = useState([])
+  const [dbLoading, setDbLoading] = useState(true)
 
-  // orders 변경될 때마다 localStorage에 저장
-  useEffect(() => {
-    localStorage.setItem(LS_ORDERS_KEY, JSON.stringify(orders))
-  }, [orders])
+  const loadOrders = async () => {
+    setDbLoading(true)
+    try {
+      const data = await fetchOrders()
+      setOrders(data)
+    } catch {
+      message.error('수주 데이터 로드 실패')
+      setOrders([])
+    } finally { setDbLoading(false) }
+  }
+
+  useEffect(() => { loadOrders() }, [])
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState(null)
   const [importLog, setImportLog] = useState([])    // { filename, count, at }
@@ -370,37 +380,48 @@ function OrderList() {
     setDrawerOpen(false)
   }
 
-  const handleAddOrder = (vals) => {
+  const handleAddOrder = async (vals) => {
     const newOrder = {
       ...vals,
-      key: `manual_${Date.now()}`,
       orderDate: vals.orderDate?.format('YYYY-MM-DD') || '',
-      dueDate: vals.dueDate?.format('YYYY-MM-DD') || '',
+      dueDate:   vals.dueDate?.format('YYYY-MM-DD')   || '',
       remainQty: vals.orderQty,
-      status: '신규',
-      progress: 0,
+      status:    '신규',
+      progress:  0,
     }
-    setOrders(prev => [newOrder, ...prev])
+    try {
+      await insertOrder(newOrder)
+      await loadOrders()
+    } catch(e) {
+      message.error('등록 실패: ' + e.message)
+      return
+    }
     addForm.resetFields()
     setDrawerOpen(false)
     message.success('추가주문이 등록되었습니다.')
   }
 
-  const handleImport = (rows, filename, suggestedLabel) => {
-    const merged = [...orders]
+  const handleImport = async (rows, filename, suggestedLabel) => {
     let added = 0
+    const merged = [...orders]
     rows.forEach(r => {
-      const exists = merged.find(o => o.jobNo && o.jobNo === r.jobNo)
-      if (!exists) { merged.push({ ...r, key: `imp_${Date.now()}_${added}` }); added++ }
+      if (!merged.find(o => o.jobNo && o.jobNo === r.jobNo)) {
+        merged.push({ ...r, key: `imp_${Date.now()}_${added}` }); added++
+      }
     })
     setOrders(merged)
     setImportLog(l => [{ filename, count:rows.length, added, at:new Date().toLocaleTimeString() }, ...l.slice(0,4)])
-    // 저장 대기 상태로 설정 → 메인화면에 저장 UI 표시
+    try {
+      await upsertOrders(rows, suggestedLabel || null)
+    } catch(e) {
+      console.error('upsertOrders error:', e)
+      message.error('DB 저장 실패: ' + (e?.message || JSON.stringify(e)))
+    }
     setPendingSave({ rows, label: suggestedLabel || '' })
   }
 
   const handleLoadBatch = (rows, label) => {
-    setOrders(rows.map((r, i) => ({ ...r, key: `batch_${label}_${i}` })))
+    setOrders(rows.length ? rows : DUMMY_ORDERS)
   }
 
   const filtered = orders.filter(o => {
@@ -438,7 +459,7 @@ function OrderList() {
         const d = calcDday(v)
         return <span>
           <span style={C}>{v}</span>
-          {d != null && v && <Tag color={d<0?'error':d<=3?'warning':'default'} style={{fontSize:10,padding:'0 4px',marginLeft:4}}>(D{d>=0?'-':'+'}{Math.abs(d)})</Tag>}
+          {d != null && v && <Tag color={d<=1?'error':d<=3?'warning':'default'} style={{fontSize:10,padding:'0 4px',marginLeft:4}}>(D{d>=0?'-':'+'}{Math.abs(d)})</Tag>}
         </span>
       }},
     { title:'거래선', dataIndex:'customer', key:'customer', width:140, ellipsis:true,
@@ -461,8 +482,14 @@ function OrderList() {
         <Space size={4}>
           <Button size="small">상세</Button>
           <Button size="small" type="primary" disabled={r.status==='완료'}>계획</Button>
-          <Popconfirm title="이 수주를 삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
-            onConfirm={()=>setOrders(prev=>prev.filter(o=>o.key!==r.key))}>
+          <Popconfirm title="이 주문을 삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
+            onConfirm={async()=>{
+              if (!isNaN(parseInt(r.key))) {
+                try { await deleteOrderById(r.key); await loadOrders() } catch { message.error('삭제 실패') }
+              } else {
+                setOrders(prev => prev.filter(o => o.key !== r.key))
+              }
+            }}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -472,8 +499,8 @@ function OrderList() {
   return (
     <div>
       <div style={{marginBottom:20}}>
-        <Title level={4} style={{margin:0}}>수주현황</Title>
-        <Text type="secondary">ERP 엑셀 업로드 또는 직접 등록 — 전체 수주 목록 및 진행 상태 관리</Text>
+        <Title level={4} style={{margin:0}}>주문현황</Title>
+        <Text type="secondary">ERP 엑셀 업로드 또는 직접 등록 — 전체 주문 목록 및 진행 상태 관리</Text>
       </div>
 
       {/* 엑셀 업로드 + 저장된 묶음 — 좌우 배치 */}
@@ -509,19 +536,17 @@ function OrderList() {
                 onChange={e => setPendingSave(p => ({...p, label: e.target.value}))}
                 placeholder="예: 20260601~20260607"
                 style={{width:200}}
-                onPressEnter={() => {
+                onPressEnter={async () => {
                   if (!pendingSave.label.trim()) { message.warning('이름을 입력하세요'); return }
-                  lsSaveBatch(pendingSave.label.trim(), pendingSave.rows)
-                  setPendingSave(null)
-                  message.success(`"${pendingSave.label}" 저장 완료`)
+                  try { await saveBatch(pendingSave.label.trim(), pendingSave.rows.length); setPendingSave(null); message.success(`"${pendingSave.label}" 저장 완료`) }
+                  catch { message.error('저장 실패') }
                 }}
               />
               <Button type="primary" icon={<CheckCircleOutlined />}
-                onClick={() => {
+                onClick={async () => {
                   if (!pendingSave.label.trim()) { message.warning('이름을 입력하세요'); return }
-                  lsSaveBatch(pendingSave.label.trim(), pendingSave.rows)
-                  setPendingSave(null)
-                  message.success(`"${pendingSave.label}" 저장 완료`)
+                  try { await saveBatch(pendingSave.label.trim(), pendingSave.rows.length); setPendingSave(null); message.success(`"${pendingSave.label}" 저장 완료`) }
+                  catch { message.error('저장 실패') }
                 }}>저장</Button>
             </Space.Compact>
             <Button type="text" onClick={() => setPendingSave(null)}>나중에</Button>
@@ -538,7 +563,7 @@ function OrderList() {
         {/* KPI 카드 */}
         <Row gutter={10} style={{marginBottom:8}}>
           {[
-            {l:'총 수주',  v:summary.total, c:'#3B82F6', f:null},
+            {l:'총 주문',  v:summary.total, c:'#3B82F6', f:null},
             {l:'신규',     v:summary.new_,  c:'#7C3AED', f:'신규'},
             {l:'진행중',   v:summary.going, c:'#F59E0B', f:'진행'},
             {l:'납기위험', v:summary.risk,  c:'#EF4444', f:'위험'},
@@ -569,7 +594,7 @@ function OrderList() {
               title="전체 삭제"
               description={`현재 목록 ${filtered.length}건을 모두 삭제할까요?`}
               okText="전체 삭제" cancelText="취소" okButtonProps={{danger:true}}
-              onConfirm={()=>{ setOrders([]); localStorage.removeItem(LS_ORDERS_KEY); message.success('전체 삭제 완료') }}>
+              onConfirm={async()=>{ try { await deleteAllOrders(); setOrders([]); message.success('전체 삭제 완료') } catch { message.error('삭제 실패') } }}>
               <Button danger icon={<DeleteOutlined />}>전체 삭제</Button>
             </Popconfirm>
             <Button type="primary" icon={<PlusOutlined />}
@@ -581,16 +606,18 @@ function OrderList() {
 
       {/* 목록 */}
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginTop:10,border:'1px solid #CBD5E1'}}>
-        <Table
-          columns={columns}
-          dataSource={filtered}
-          pagination={false}
-          bordered
-          size="small"
-          scroll={{x:1150}}
-          rowClassName={r=>r.status==='위험'?'row-risk':''}
-          locale={{emptyText:<Empty description="수주 데이터가 없습니다. ERP 엑셀을 업로드하세요." />}}
-        />
+        <Spin spinning={dbLoading}>
+          <Table
+            columns={columns}
+            dataSource={filtered}
+            pagination={false}
+            bordered
+            size="small"
+            scroll={{x:1150}}
+            rowClassName={r=>r.status==='위험'?'row-risk':''}
+            locale={{emptyText:<Empty description="주문 데이터가 없습니다. ERP 엑셀을 업로드하세요." />}}
+          />
+        </Spin>
       </Card>
 
       <Drawer
@@ -675,10 +702,6 @@ function OrderList() {
         .row-risk td { background: #FFF8F8 !important; }
         .row-overdue td { background: #FEF2F2 !important; }
         .row-urgent td { background: #FFFBEB !important; }
-        .ant-table-bordered .ant-table-cell { border-color: #CBD5E1 !important; }
-        .ant-table-bordered .ant-table-thead > tr > th { border-color: #CBD5E1 !important; background: #F8FAFC; }
-        .ant-table-small .ant-table-cell { padding: 5px 8px !important; font-size: 13px; font-weight: 400; color: #0F172A; }
-        .ant-table-small .ant-table-thead .ant-table-cell { padding: 6px 8px !important; font-size: 12px; font-weight: 600; }
       `}</style>
     </div>
   )
@@ -690,12 +713,12 @@ function OrderInput() {
   return (
     <div>
       <div style={{marginBottom:20}}>
-        <Title level={4} style={{margin:0}}>수주 수동 등록</Title>
-        <Text type="secondary">신규 수주 정보 직접 입력 (ERP 엑셀 미사용 시)</Text>
+        <Title level={4} style={{margin:0}}>주문 수동 등록</Title>
+        <Text type="secondary">신규 주문 정보 직접 입력 (ERP 엑셀 미사용 시)</Text>
       </div>
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
         <Form form={form} layout="vertical">
-          <Title level={5} style={{marginBottom:16,color:'#374151'}}>수주 기본정보</Title>
+          <Title level={5} style={{marginBottom:16,color:'#374151'}}>주문 기본정보</Title>
           <Row gutter={16}>
             <Col span={8}><Form.Item label="제번" name="jobNo" rules={[{required:true}]}><Input placeholder="예: 26T0601A01" /></Form.Item></Col>
             <Col span={8}><Form.Item label="주문PT#" name="productCode"><Input placeholder="예: 4UF0062*A" /></Form.Item></Col>
@@ -713,7 +736,7 @@ function OrderInput() {
           <Form.Item style={{marginTop:8,textAlign:'right'}}>
             <Space>
               <Button onClick={()=>form.resetFields()}>초기화</Button>
-              <Button type="primary" onClick={()=>form.submit()}>수주 등록</Button>
+              <Button type="primary" onClick={()=>form.submit()}>주문 등록</Button>
             </Space>
           </Form.Item>
         </Form>
@@ -755,10 +778,10 @@ function DeliveryCheck() {
     <div>
       <div style={{marginBottom:20}}>
         <Title level={4} style={{margin:0}}>납기 검토</Title>
-        <Text type="secondary">납기 준수 가능 여부 분석 및 위험 수주 관리</Text>
+        <Text type="secondary">납기 준수 가능 여부 분석 및 위험 주문 관리</Text>
       </div>
       <Alert type="warning" showIcon icon={<WarningOutlined />}
-        message="납기 D-7 이내 수주 2건이 있습니다. 납기위험 1건에 대한 즉시 조치가 필요합니다."
+        message="납기 D-7 이내 주문 2건이 있습니다. 납기위험 1건에 대한 즉시 조치가 필요합니다."
         style={{marginBottom:16,borderRadius:10}} />
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
         <Table columns={cols} dataSource={items} pagination={false} size="middle" />
