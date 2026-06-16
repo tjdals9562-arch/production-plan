@@ -63,7 +63,7 @@ const MENUS = [
     ['orderList','주문현황'],['orderInput','주문등록'],['deliveryCheck','납기검토'],
   ]},
   { id:'master', icon:<DatabaseOutlined />, name:'기준정보', sub:[
-    ['processMaster','공정마스터'],['processRoute','공정경로 관리'],['workerMaster','작업자 마스터'],['equipMaster','설비 마스터'],['unregistered','공정 미등록'],
+    ['processRoute','공정마스터'],['workerMaster','작업자 마스터'],['equipMaster','설비 마스터'],['unregistered','공정 미등록'],
   ]},
   { id:'result', icon:<BarChartOutlined />, name:'생산실적', sub:[
     ['resultInput','실적 입력'],['resultProcess','공정 진도현황'],['resultDefect','불량 현황'],['resultSummary','일/월별 집계'],
