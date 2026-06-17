@@ -963,7 +963,7 @@ function ProcessMaster() {
   return (
     <div>
       <div style={{marginBottom:20}}>
-        <Title level={4} style={{margin:0}}>공정마스터</Title>
+        <Title level={4} style={{margin:0}}>공정라우팅</Title>
         <Text type="secondary">반별 공정 목록 · 분류 · 표준시간 관리 — 작업자·설비마스터 드롭다운과 연동</Text>
       </div>
 
