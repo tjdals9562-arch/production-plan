@@ -1,4 +1,4 @@
-import { Table, Card, Form, Row, Col, Input, Select, DatePicker, Button, Space, Tag, Typography, Statistic, Steps, Progress, Badge } from 'antd'
+﻿import { Table, Card, Form, Row, Col, Input, Select, DatePicker, Button, Space, Tag, Typography, Statistic, Steps, Progress, Badge } from 'antd'
 import { SaveOutlined, ClearOutlined } from '@ant-design/icons'
 
 const { Title, Text } = Typography
@@ -77,7 +77,7 @@ function ResultInput() {
       </Card>
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
         <Title level={5} style={{marginBottom:12}}>최근 실적 목록</Title>
-        <Table columns={resultColumns} dataSource={RESULTS} pagination={{pageSize:10}} size="middle" />
+        <Table columns={resultColumns} dataSource={RESULTS} pagination={{pageSize:10}} size="small" bordered />
       </Card>
     </div>
   )
@@ -139,7 +139,7 @@ function DefectStatus() {
         ))}
       </Row>
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
-        <Table columns={defectColumns} dataSource={DEFECTS} pagination={false} size="middle" />
+        <Table columns={defectColumns} dataSource={DEFECTS} pagination={false} size="small" bordered />
       </Card>
     </div>
   )

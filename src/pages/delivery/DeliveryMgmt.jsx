@@ -1,4 +1,4 @@
-import { Table, Card, Row, Col, Progress, Tag, Typography, Statistic, Space, Badge, Alert } from 'antd'
+﻿import { Table, Card, Row, Col, Progress, Tag, Typography, Statistic, Space, Badge, Alert } from 'antd'
 import { WarningOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 
@@ -81,7 +81,7 @@ function DeliveryPlan() {
         ))}
       </Row>
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
-        <Table columns={deliveryCols} dataSource={DELIVERY} pagination={false} size="middle" scroll={{x:900}} />
+        <Table columns={deliveryCols} dataSource={DELIVERY} pagination={false} size="small" bordered scroll={{x:900}} />
       </Card>
     </div>
   )
@@ -113,7 +113,7 @@ function DeliveryRate() {
         </Col>
       </Row>
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
-        <Table columns={rateCols} dataSource={RATE_HISTORY} pagination={false} size="middle" />
+        <Table columns={rateCols} dataSource={RATE_HISTORY} pagination={false} size="small" bordered />
       </Card>
     </div>
   )

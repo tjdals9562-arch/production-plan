@@ -1,4 +1,4 @@
-import { Table, Card, Row, Col, Progress, Tag, Typography, Statistic, Space, Badge, Alert } from 'antd'
+﻿import { Table, Card, Row, Col, Progress, Tag, Typography, Statistic, Space, Badge, Alert } from 'antd'
 import { WarningOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 
@@ -100,7 +100,7 @@ function EquipLoad() {
       <Row gutter={[16,16]}>
         <Col span={17}>
           <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
-            <Table columns={equipColumns} dataSource={EQUIP} pagination={false} size="middle"
+            <Table columns={equipColumns} dataSource={EQUIP} pagination={false} size="small" bordered
               rowClassName={r=>r.load>90?'ant-table-row-danger':''} />
           </Card>
         </Col>
@@ -131,7 +131,7 @@ function ManpowerLoad() {
         ))}
       </Row>
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
-        <Table columns={mpColumns} dataSource={MANPOWER} pagination={false} size="middle" />
+        <Table columns={mpColumns} dataSource={MANPOWER} pagination={false} size="small" bordered />
       </Card>
     </div>
   )

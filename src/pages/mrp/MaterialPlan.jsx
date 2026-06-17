@@ -1,4 +1,4 @@
-import { Table, Card, Row, Col, Statistic, Progress, Button, Space, Select, Tag, Typography, Badge, Alert } from 'antd'
+﻿import { Table, Card, Row, Col, Statistic, Progress, Button, Space, Select, Tag, Typography, Badge, Alert } from 'antd'
 import { SearchOutlined, DownloadOutlined, CheckOutlined, SyncOutlined, WarningOutlined } from '@ant-design/icons'
 
 const { Title, Text } = Typography
@@ -81,7 +81,7 @@ function MrpExplosion() {
           <Button type="primary" icon={<SyncOutlined />}>소요량 전개 실행</Button>
           <Button icon={<DownloadOutlined />}>Excel</Button>
         </Space>
-        <Table columns={mrpColumns} dataSource={MRP_DATA} pagination={false} size="middle" scroll={{x:900}} />
+        <Table columns={mrpColumns} dataSource={MRP_DATA} pagination={false} size="small" bordered scroll={{x:900}} />
       </Card>
     </div>
   )
@@ -108,7 +108,7 @@ function MrpStock() {
           <Select placeholder="상태" style={{width:110}} allowClear options={[{label:'부족',value:'부족'},{label:'정상',value:'정상'},{label:'충분',value:'충분'}]} />
           <Button type="primary" icon={<SearchOutlined />}>조회</Button>
         </Space>
-        <Table columns={stockColumns} dataSource={STOCK_DATA} pagination={false} size="middle" />
+        <Table columns={stockColumns} dataSource={STOCK_DATA} pagination={false} size="small" bordered />
       </Card>
     </div>
   )

@@ -1,4 +1,4 @@
-import { Table, Card, Row, Col, Progress, Tag, Typography, Statistic, Space, Badge } from 'antd'
+﻿import { Table, Card, Row, Col, Progress, Tag, Typography, Statistic, Space, Badge } from 'antd'
 import { DownloadOutlined, FilePdfOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 import { Button } from 'antd'
@@ -131,7 +131,7 @@ function ProductivityAnalysis() {
       </Card>
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
         <Title level={5} style={{marginBottom:12}}>팀별 생산성 상세</Title>
-        <Table columns={prodColumns} dataSource={PROD_ANALYSIS} pagination={false} size="middle" />
+        <Table columns={prodColumns} dataSource={PROD_ANALYSIS} pagination={false} size="small" bordered />
       </Card>
     </div>
   )

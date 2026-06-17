@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+﻿import { useState, useCallback, useEffect } from 'react'
 import {
   Table, Tag, Button, Space, Form, Input, Select, DatePicker, Row, Col, Card,
   Progress, Typography, Badge, Statistic, Divider, Alert, Modal, message, Tooltip,
@@ -784,7 +784,7 @@ function DeliveryCheck() {
         message="납기 D-7 이내 주문 2건이 있습니다. 납기위험 1건에 대한 즉시 조치가 필요합니다."
         style={{marginBottom:16,borderRadius:10}} />
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
-        <Table columns={cols} dataSource={items} pagination={false} size="middle" />
+        <Table columns={cols} dataSource={items} pagination={false} size="small" bordered />
       </Card>
     </div>
   )

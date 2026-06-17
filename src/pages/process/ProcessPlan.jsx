@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+﻿import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Table, Card, Row, Col, Button, Space, Select, Tag, Typography, Badge, Progress, Tooltip,
   Form, Input, InputNumber, Modal, Drawer, Steps, Divider, Alert, message, Empty, Popconfirm, Statistic, Spin,
   AutoComplete, Switch } from 'antd'
@@ -97,7 +97,7 @@ function WorkOrder() {
           <Button type="primary" icon={<PlusOutlined />} style={{marginLeft:'auto',background:'#10B981',borderColor:'#10B981'}}>작업지시 발행</Button>
           <Button>일괄 발행</Button>
         </Space>
-        <Table columns={woColumns} dataSource={WORK_ORDERS} pagination={{pageSize:10}} size="middle" scroll={{x:1100}} />
+        <Table columns={woColumns} dataSource={WORK_ORDERS} pagination={{pageSize:10}} size="small" bordered scroll={{x:1100}} />
       </Card>
     </div>
   )
@@ -180,7 +180,7 @@ function GanttChart() {
 
 const procColor = () => '#3B82F6'
 
-// ─── 공정경로 마스터 데이터 (초기 샘플) ─────────────────────────
+// ─── 공정라우팅 마스터 데이터 (초기 샘플) ─────────────────────────
 const INIT_ROUTES = [
   { key:'r1', productCode:'4UF0062*A', productName:'SILL SUPPORT', spec:'T4.5*60*109 W',
     processes:[
@@ -295,7 +295,7 @@ function ProcessFlow({ processes }) {
   )
 }
 
-// ─── 공정경로 등록/수정 Drawer ───────────────────────────────────
+// ─── 공정라우팅 등록/수정 Drawer ───────────────────────────────────
 function RouteFormDrawer({ route, open, onClose, onSaved }) {
   const [form] = Form.useForm()
   const [saving, setSaving] = useState(false)
@@ -340,7 +340,7 @@ function RouteFormDrawer({ route, open, onClose, onSaved }) {
       title={
         <Space>
           <SettingOutlined style={{color:'#3B82F6'}} />
-          <Text strong>{isNew ? '공정경로 신규 등록' : `${route?.productCode} 수정`}</Text>
+          <Text strong>{isNew ? '공정라우팅 신규 등록' : `${route?.productCode} 수정`}</Text>
         </Space>
       }
       open={open} onClose={onClose} width={700}
@@ -395,7 +395,7 @@ function RouteFormDrawer({ route, open, onClose, onSaved }) {
   )
 }
 
-// ─── 공정경로 관리 메인 ──────────────────────────────────────────
+// ─── 공정라우팅 관리 메인 ──────────────────────────────────────────
 function ProcessRouteMaster() {
   const [routes, setRoutes] = useState([])
   const [dbLoading, setDbLoading] = useState(true)
@@ -411,7 +411,7 @@ function ProcessRouteMaster() {
       const data = await fetchProcessRoutes()
       if (data.length) { setRoutes(data) }
       else { await seedProcessRoutes(INIT_ROUTES); setRoutes(await fetchProcessRoutes()) }
-    } catch { message.error('공정경로 로드 실패'); setRoutes(INIT_ROUTES) }
+    } catch { message.error('공정라우팅 로드 실패'); setRoutes(INIT_ROUTES) }
     finally { setDbLoading(false) }
   }
 
@@ -460,7 +460,7 @@ function ProcessRouteMaster() {
         <Space size={4}>
           <Button size="small" icon={<EditOutlined />}
             onClick={()=>{ setFormRoute(r); setFormOpen(true) }}>상세</Button>
-          <Popconfirm title="이 공정경로를 삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
+          <Popconfirm title="이 공정라우팅를 삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
             onConfirm={async()=>{ try { await deleteProcessRouteById(r.key); await loadRoutes() } catch { message.error('삭제 실패') } }}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -471,7 +471,7 @@ function ProcessRouteMaster() {
   return (
     <div>
       <div style={{marginBottom:20}}>
-        <Title level={4} style={{margin:0}}>공정경로 관리</Title>
+        <Title level={4} style={{margin:0}}>공정라우팅</Title>
         <Text type="secondary">제품별 공정순서 · 소요시간 · 필요인원 · 설비 마스터 관리</Text>
       </div>
 
@@ -480,7 +480,7 @@ function ProcessRouteMaster() {
         <div style={{marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
           <FileExcelOutlined style={{fontSize:16,color:'#10B981'}} />
           <Text strong>공정정보 엑셀 업로드</Text>
-          <Text type="secondary" style={{fontSize:12}}>— 제품별 공정경로 엑셀을 드래그하세요</Text>
+          <Text type="secondary" style={{fontSize:12}}>— 제품별 공정라우팅 엑셀을 드래그하세요</Text>
           <Tooltip title={
             <div>
               <div style={{fontWeight:700,marginBottom:4}}>필요 컬럼명 (순서 무관)</div>
@@ -506,7 +506,7 @@ function ProcessRouteMaster() {
           {parsing
             ? <Text type="secondary">⏳ 파싱 중...</Text>
             : <><InboxOutlined style={{fontSize:28,color:'#94A3B8',display:'block',marginBottom:6}} />
-              <Text type="secondary" style={{fontSize:13}}>공정경로 엑셀 파일을 드래그하거나 클릭하여 선택</Text></>}
+              <Text type="secondary" style={{fontSize:13}}>공정라우팅 엑셀 파일을 드래그하거나 클릭하여 선택</Text></>}
         </div>
 
         {importLog.length > 0 && (
@@ -531,7 +531,7 @@ function ProcessRouteMaster() {
         <Spin spinning={dbLoading}>
           <Table columns={cols} dataSource={filtered} pagination={{pageSize:15,showTotal:t=>`총 ${t}개 제품`}}
             bordered size="small" scroll={{x:1000}}
-            locale={{emptyText:<Empty description="공정경로 데이터가 없습니다. 위에서 엑셀을 업로드하세요." />}} />
+            locale={{emptyText:<Empty description="공정라우팅 데이터가 없습니다. 위에서 엑셀을 업로드하세요." />}} />
         </Spin>
       </Card>
 
@@ -692,7 +692,7 @@ function WorkerMaster() {
             style={{background:'#10B981',borderColor:'#10B981'}}>작업자 추가</Button>
         </div>
         <Spin spinning={dbLoading}>
-          <Table columns={cols} dataSource={workers} pagination={false} size="middle" scroll={{x:1000}} />
+          <Table columns={cols} dataSource={workers} pagination={false} size="small" bordered scroll={{x:1000}} />
         </Spin>
       </Card>
 
@@ -842,7 +842,7 @@ function EquipMaster() {
             style={{background:'#10B981',borderColor:'#10B981'}}>설비 추가</Button>
         </div>
         <Spin spinning={dbLoading}>
-          <Table columns={cols} dataSource={equips} pagination={false} size="middle" scroll={{x:900}} />
+          <Table columns={cols} dataSource={equips} pagination={false} size="small" bordered scroll={{x:900}} />
         </Spin>
       </Card>
 
@@ -984,7 +984,7 @@ function ProcessMaster() {
             style={{background:'#10B981',borderColor:'#10B981'}}>공정 추가</Button>
         </div>
         <Spin spinning={dbLoading}>
-          <Table columns={cols} dataSource={processes} pagination={false} size="middle" scroll={{x:900}}
+          <Table columns={cols} dataSource={processes} pagination={false} size="small" bordered scroll={{x:900}}
             rowClassName={r=>!r.isActive?'proc-inactive':''} />
         </Spin>
       </Card>

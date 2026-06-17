@@ -1,4 +1,4 @@
-import { Table, Card, Row, Col, Statistic, Progress, Button, Space, Select, Typography, Tag, Tabs } from 'antd'
+﻿import { Table, Card, Row, Col, Statistic, Progress, Button, Space, Select, Typography, Tag, Tabs } from 'antd'
 import { DownloadOutlined, PlusOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 
@@ -84,7 +84,7 @@ function MonthPlan() {
           <Button icon={<DownloadOutlined />}>Excel</Button>
           <Button type="primary" icon={<PlusOutlined />} style={{marginLeft:'auto',background:'#10B981',borderColor:'#10B981'}}>계획 추가</Button>
         </Space>
-        <Table columns={monthColumns} dataSource={MONTH_PLAN} pagination={false} size="middle"
+        <Table columns={monthColumns} dataSource={MONTH_PLAN} pagination={false} size="small" bordered
           summary={data=>(
             <Table.Summary.Row>
               <Table.Summary.Cell index={0} colSpan={2}><Text strong>합계</Text></Table.Summary.Cell>
