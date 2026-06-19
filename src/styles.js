@@ -378,6 +378,11 @@ export const styles = `
   .tab:hover { color: var(--text); }
   .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 
+  /* ─── COMPACT TABLE ─── */
+  .compact-row td.ant-table-cell { padding: 6px 8px !important; font-size: 12px; }
+  .compact-row td.ant-table-cell .ant-space { gap: 0 !important; }
+  .ant-table-bordered .compact-row td.ant-table-cell { border-right: 1px solid #f0f0f0; }
+
   /* ─── RESPONSIVE ─── */
   @media (max-width: 1200px) {
     .kpi-grid { grid-template-columns: repeat(2, 1fr); }

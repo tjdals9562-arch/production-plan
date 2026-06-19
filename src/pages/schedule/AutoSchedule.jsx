@@ -4,11 +4,11 @@
  * 유한능력 자동 스케줄을 생성하고 Gantt / 작업자 일일계획으로 시각화
  */
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Card, Row, Col, Button, Space, Select, Tag, Typography, Badge, Progress,
   Table, Tooltip, Alert, Statistic, Tabs, Steps, Divider, Empty, Switch,
-  Spin, message, Modal, Popconfirm,
+  Spin, message, Modal, Popconfirm, Segmented, Input,
 } from 'antd'
 import {
   ThunderboltOutlined, CalendarOutlined, UserOutlined, ToolOutlined,
@@ -78,127 +78,296 @@ const PROC_COLOR = {
 }
 const pc = name => PROC_COLOR[name] || PROC_COLOR[Object.keys(PROC_COLOR).find(k => name?.includes(k))] || '#94A3B8'
 
-// ─── CSS Gantt 차트 ───────────────────────────────────────────────
-function GanttView({ ganttData, startDate, endDate }) {
+// ─── 인터랙티브 Gantt 차트 (드래그 앤 드롭) ─────────────────────
+function GanttView({ ganttData, tasks, workers, startDate, endDate, onTaskUpdate }) {
+  const [viewMode, setViewMode] = useState('job')
+  const [searchText, setSearchText] = useState('')
+  const [dragInfo, setDragInfo] = useState(null)
+  const dragRef = useRef(null)
+
   const start = dayjs(startDate)
   const end = dayjs(endDate)
   const totalDays = end.diff(start, 'day') + 1
   const dayWidth = Math.max(28, Math.min(52, Math.round(900 / totalDays)))
   const today = dayjs().format('YYYY-MM-DD')
+  const ROW_H = viewMode === 'job' ? 60 : 70
+  const LEFT_W = viewMode === 'job' ? 260 : 180
 
-  // 날짜 배열 생성
-  const dates = []
-  for (let i = 0; i < totalDays; i++) {
-    dates.push(start.add(i, 'day'))
-  }
+  const dates = useMemo(() => {
+    const arr = []
+    for (let i = 0; i < totalDays; i++) arr.push(start.add(i, 'day'))
+    return arr
+  }, [startDate, totalDays])
 
-  const barLeft = (dateStr) => {
-    const d = dayjs(dateStr)
-    return Math.max(0, d.diff(start, 'day')) * dayWidth
-  }
-  const barWidth = (sDate, eDate) => {
-    const s = dayjs(sDate), e = dayjs(eDate)
-    return Math.max(dayWidth, (e.diff(s, 'day') + 1) * dayWidth)
-  }
-
+  const barLeft = (d) => Math.max(0, dayjs(d).diff(start, 'day')) * dayWidth
+  const barW = (s, e) => Math.max(dayWidth, (dayjs(e).diff(dayjs(s), 'day') + 1) * dayWidth)
   const totalW = totalDays * dayWidth
 
+  const workerRows = useMemo(() => {
+    if (!tasks) return []
+    const map = {}
+    workers.forEach(w => { map[w.name] = { key: w.name, workerName: w.name, primary: w.primary, bars: [] } })
+    map['미배정'] = { key:'미배정', workerName:'미배정', primary:null, bars:[] }
+    tasks.forEach((t, idx) => {
+      const wn = t.assignedWorkerName || '미배정'
+      if (!map[wn]) map[wn] = { key:wn, workerName:wn, primary:null, bars:[] }
+      map[wn].bars.push({
+        taskIdx:idx, jobNo:t.jobNo, productName:t.productName,
+        label:t.processName, startDate:t.startDate, endDate:t.endDate,
+        status:t.status, warning:t.warning, equip:t.assignedEquip, worker:t.assignedWorkerName,
+      })
+    })
+    return Object.values(map)
+      .filter(r => r.bars.length > 0 || workers.some(w => w.name === r.workerName))
+      .sort((a, b) => a.workerName === '미배정' ? 1 : b.workerName === '미배정' ? -1 : a.workerName.localeCompare(b.workerName))
+  }, [tasks, workers])
+
+  const filteredGantt = searchText
+    ? ganttData?.filter(r => r.jobNo?.toLowerCase().includes(searchText.toLowerCase()) || r.productName?.toLowerCase().includes(searchText.toLowerCase()))
+    : ganttData
+  const filteredWorker = searchText
+    ? workerRows.map(r => ({ ...r, bars: r.bars.filter(b => b.jobNo?.toLowerCase().includes(searchText.toLowerCase()) || b.productName?.toLowerCase().includes(searchText.toLowerCase())) })).filter(r => r.bars.length > 0)
+    : workerRows
+  const rows = viewMode === 'job' ? filteredGantt : filteredWorker
+
+  const onBarDown = (e, bar, ri) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    dragRef.current = { bar, ri, x0: e.clientX, y0: e.clientY }
+    setDragInfo({ taskIdx: bar.taskIdx, ri, dx: 0, dy: 0 })
+
+    const onMove = (ev) => {
+      setDragInfo({ taskIdx: dragRef.current.bar.taskIdx, ri: dragRef.current.ri,
+        dx: ev.clientX - dragRef.current.x0, dy: ev.clientY - dragRef.current.y0 })
+    }
+    const onUp = (ev) => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      if (!dragRef.current) { setDragInfo(null); return }
+
+      const { bar: b, ri: origRi } = dragRef.current
+      const dx = ev.clientX - dragRef.current.x0
+      const dy = ev.clientY - dragRef.current.y0
+      const dd = Math.round(dx / dayWidth)
+      const updates = {}
+      let changed = false
+
+      if (dd !== 0) {
+        updates.startDate = dayjs(b.startDate).add(dd, 'day').format('YYYY-MM-DD')
+        updates.endDate = dayjs(b.endDate).add(dd, 'day').format('YYYY-MM-DD')
+        changed = true
+      }
+      if (viewMode === 'worker') {
+        const rd = Math.round(dy / ROW_H)
+        const newRi = Math.max(0, Math.min(rows.length - 1, origRi + rd))
+        if (newRi !== origRi && rows[newRi]) {
+          const target = rows[newRi]
+          const w = workers.find(wk => wk.name === target.workerName)
+          if (w) {
+            updates.assignedWorkerName = w.name
+            updates.assignedWorker = w.name
+            updates.assignedWorkerList = [w.name]
+            updates.assignedWorkerCount = 1
+          } else {
+            updates.assignedWorkerName = null
+            updates.assignedWorker = '미배정'
+            updates.assignedWorkerList = []
+            updates.assignedWorkerCount = 0
+          }
+          changed = true
+        }
+      }
+      if (changed) onTaskUpdate(b.taskIdx, updates)
+      dragRef.current = null
+      setDragInfo(null)
+    }
+    document.body.style.cursor = 'grabbing'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  const getSnap = (taskIdx) => {
+    if (!dragInfo || dragInfo.taskIdx !== taskIdx) return null
+    const dd = Math.round(dragInfo.dx / dayWidth)
+    const rd = viewMode === 'worker' ? Math.round(dragInfo.dy / ROW_H) : 0
+    return { sx: dd * dayWidth, sy: rd * ROW_H, dd, rd }
+  }
+
+  const targetRi = dragInfo && viewMode === 'worker'
+    ? Math.max(0, Math.min((rows?.length||1) - 1, dragInfo.ri + Math.round(dragInfo.dy / ROW_H)))
+    : -1
+
   return (
-    <div style={{overflowX:'auto'}}>
-      {/* 날짜 헤더 */}
-      <div style={{display:'flex',borderBottom:'2px solid #E2E8F0',position:'sticky',top:0,background:'#fff',zIndex:10}}>
-        <div style={{width:260,flexShrink:0,padding:'8px 12px',fontSize:12,fontWeight:700,color:'#64748B',borderRight:'1px solid #E2E8F0',background:'#F8FAFC'}}>
-          제번 / 제품
-        </div>
-        <div style={{display:'flex',minWidth:totalW}}>
-          {dates.map((d,i)=>{
-            const isToday = d.format('YYYY-MM-DD') === today
-            const isWeekend = d.day() === 0 || d.day() === 6
-            return (
-              <div key={i} style={{
-                width:dayWidth, flexShrink:0, textAlign:'center', fontSize:10, padding:'4px 0',
-                borderRight:'1px solid #F1F5F9', fontWeight:isToday?800:isWeekend?400:600,
-                color:isToday?'#3B82F6':isWeekend?'#CBD5E1':'#64748B',
-                background:isToday?'#EFF6FF':isWeekend?'#F8FAFC':'transparent',
-              }}>
-                <div>{d.format('M/D')}</div>
-                <div style={{fontSize:9,color:'inherit'}}>{'일월화수목금토'[d.day()]}</div>
-              </div>
-            )
-          })}
-        </div>
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12,flexWrap:'wrap'}}>
+        <Segmented size="small" value={viewMode} onChange={setViewMode}
+          options={[{label:'제번별',value:'job'},{label:'작업자별',value:'worker'}]} />
+        <Input.Search
+          placeholder="제번 / 제품명 검색"
+          allowClear
+          size="small"
+          style={{width:200}}
+          onChange={e => setSearchText(e.target.value)}
+          value={searchText}
+        />
+        <Text type="secondary" style={{fontSize:11}}>
+          {viewMode === 'worker' ? '바를 드래그하여 일정 변경 / 다른 작업자 행으로 이동하여 재배치' : '바를 좌우로 드래그하여 일정 변경'}
+        </Text>
       </div>
 
-      {/* Gantt 행 */}
-      {ganttData.map((job, ri) => (
-        <div key={ri} style={{display:'flex',borderBottom:`1px solid ${job.isAtRisk?'#FECACA':'#F8FAFC'}`,background:job.isAtRisk?'#FFF8F8':'transparent'}}>
-          {/* 제번/제품 정보 */}
-          <div style={{width:260,flexShrink:0,padding:'10px 12px',borderRight:'1px solid #E2E8F0'}}>
-            <div style={{fontSize:13,fontWeight:700,color:'#3B82F6',fontFamily:'monospace'}}>{job.jobNo}</div>
-            <div style={{fontSize:11,color:'#64748B',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{job.productName}</div>
-            <div style={{display:'flex',gap:6,marginTop:4,flexWrap:'wrap'}}>
-              <Text style={{fontSize:10,color:'#94A3B8'}}>납기 {job.dueDate}</Text>
-              {job.isAtRisk && <Tag color="error" style={{fontSize:10,padding:'0 4px',margin:0}}>위험</Tag>}
-            </div>
+      <div style={{overflowX:'auto'}}>
+        {/* 날짜 헤더 */}
+        <div style={{display:'flex',borderBottom:'2px solid #E2E8F0',position:'sticky',top:0,background:'#fff',zIndex:10}}>
+          <div style={{width:LEFT_W,flexShrink:0,padding:'8px 12px',fontSize:12,fontWeight:700,color:'#64748B',borderRight:'1px solid #E2E8F0',background:'#F8FAFC'}}>
+            {viewMode === 'job' ? '제번 / 제품' : '작업자'}
           </div>
-
-          {/* 바 영역 */}
-          <div style={{position:'relative',height:60,minWidth:totalW}}>
-            {/* 오늘 선 */}
-            {barLeft(today) >= 0 && barLeft(today) <= totalW && (
-              <div style={{position:'absolute',left:barLeft(today),top:0,bottom:0,width:2,background:'#3B82F6',opacity:0.4,zIndex:5}} />
-            )}
-            {/* 납기선 */}
-            {job.dueDate && (
-              <div style={{position:'absolute',left:barLeft(job.dueDate)+dayWidth/2,top:0,bottom:0,width:2,background:'#EF4444',opacity:0.5,zIndex:5}} />
-            )}
-            {/* 격자 */}
-            {dates.map((d,i) => (
-              <div key={i} style={{position:'absolute',left:i*dayWidth,top:0,bottom:0,width:dayWidth,
-                background:(d.day()===0||d.day()===6)?'rgba(241,245,249,0.7)':'transparent',
-                borderRight:'1px solid #F8FAFC'}} />
-            ))}
-            {/* 공정 바 */}
-            {job.bars.map((bar, bi) => (
-              <Tooltip key={bi} title={
-                <div>
-                  <div><strong>{bar.label}</strong></div>
-                  <div>{bar.startDate} ~ {bar.endDate}</div>
-                  <div>작업자: {bar.worker || '미배정'}</div>
-                  <div>설비: {bar.equip || '—'}</div>
-                  {bar.warning && <div style={{color:'#FCA5A5'}}>⚠ {bar.warning}</div>}
-                </div>
-              }>
-                <div style={{
-                  position:'absolute', top:'50%', transform:'translateY(-50%)',
-                  left: barLeft(bar.startDate) + 2,
-                  width: Math.max(barWidth(bar.startDate, bar.endDate) - 4, dayWidth - 4),
-                  height: 24, borderRadius:5,
-                  background: bar.status==='위험' ? '#EF4444' : pc(bar.label),
-                  opacity: bar.status==='위험' ? 1 : 0.88,
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  fontSize:10, fontWeight:700, color:'#fff', cursor:'pointer',
-                  boxShadow:'0 1px 4px rgba(0,0,0,0.18)',
-                  border: bar.warning ? '2px solid #FCA5A5' : 'none',
+          <div style={{display:'flex',minWidth:totalW}}>
+            {dates.map((d,i)=>{
+              const isToday = d.format('YYYY-MM-DD') === today
+              const isWE = d.day() === 0 || d.day() === 6
+              return (
+                <div key={i} style={{
+                  width:dayWidth,flexShrink:0,textAlign:'center',fontSize:10,padding:'4px 0',
+                  borderRight:'1px solid #F1F5F9',fontWeight:isToday?800:isWE?400:600,
+                  color:isToday?'#3B82F6':isWE?'#CBD5E1':'#64748B',
+                  background:isToday?'#EFF6FF':isWE?'#F8FAFC':'transparent',
                 }}>
-                  {barWidth(bar.startDate, bar.endDate) > dayWidth + 10 ? bar.label : ''}
+                  <div>{d.format('M/D')}</div>
+                  <div style={{fontSize:9}}>{'일월화수목금토'[d.day()]}</div>
                 </div>
-              </Tooltip>
-            ))}
+              )
+            })}
           </div>
         </div>
-      ))}
 
-      {/* 범례 */}
-      <div style={{marginTop:16,display:'flex',gap:12,flexWrap:'wrap',padding:'8px 0',borderTop:'1px solid #F1F5F9'}}>
-        {Object.entries(PROC_COLOR).map(([name, color]) => (
-          <Space key={name} size={5}>
-            <div style={{width:12,height:12,borderRadius:3,background:color}} />
-            <Text style={{fontSize:11,color:'#64748B'}}>{name}</Text>
-          </Space>
-        ))}
-        <Space size={5}><div style={{width:2,height:12,background:'#3B82F6',opacity:0.5}} /><Text style={{fontSize:11,color:'#64748B'}}>오늘</Text></Space>
-        <Space size={5}><div style={{width:2,height:12,background:'#EF4444',opacity:0.5}} /><Text style={{fontSize:11,color:'#64748B'}}>납기</Text></Space>
+        {/* Gantt 행 */}
+        {rows?.map((row, ri) => {
+          const isDropTarget = ri === targetRi && ri !== dragInfo?.ri
+          return (
+            <div key={row.key || row.jobNo || ri} style={{
+              display:'flex',
+              borderBottom:`1px solid ${row.isAtRisk?'#FECACA':'#F8FAFC'}`,
+              background: isDropTarget ? '#DBEAFE' : row.isAtRisk ? '#FFF8F8' : 'transparent',
+              transition:'background 0.12s',
+            }}>
+              {/* 좌측 정보 */}
+              <div style={{width:LEFT_W,flexShrink:0,padding:'10px 12px',borderRight:'1px solid #E2E8F0'}}>
+                {viewMode === 'job' ? (
+                  <>
+                    <div style={{fontSize:13,fontWeight:700,color:'#3B82F6',fontFamily:'monospace'}}>{row.jobNo}</div>
+                    <div style={{fontSize:11,color:'#64748B',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{row.productName}</div>
+                    <div style={{display:'flex',gap:6,marginTop:4,flexWrap:'wrap'}}>
+                      <Text style={{fontSize:10,color:'#94A3B8'}}>납기 {row.dueDate}</Text>
+                      {row.isAtRisk && <Tag color="error" style={{fontSize:10,padding:'0 4px',margin:0}}>위험</Tag>}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{fontSize:13,fontWeight:700,color:row.workerName==='미배정'?'#EF4444':'#0F172A'}}>{row.workerName}</div>
+                    {row.primary && <Tag style={{fontSize:10,padding:'0 4px',margin:'2px 0 0',background:pc(row.primary)+'20',color:pc(row.primary),border:'none'}}>{row.primary}</Tag>}
+                    <Text style={{fontSize:10,color:'#94A3B8',display:'block',marginTop:2}}>{row.bars.length}건</Text>
+                  </>
+                )}
+              </div>
+
+              {/* 바 영역 */}
+              <div style={{position:'relative',height:ROW_H,minWidth:totalW}}>
+                {barLeft(today) >= 0 && barLeft(today) <= totalW && (
+                  <div style={{position:'absolute',left:barLeft(today),top:0,bottom:0,width:2,background:'#3B82F6',opacity:0.4,zIndex:5}} />
+                )}
+                {viewMode === 'job' && row.dueDate && (
+                  <div style={{position:'absolute',left:barLeft(row.dueDate)+dayWidth/2,top:0,bottom:0,width:2,background:'#EF4444',opacity:0.5,zIndex:5}} />
+                )}
+                {dates.map((d,i) => (
+                  <div key={i} style={{position:'absolute',left:i*dayWidth,top:0,bottom:0,width:dayWidth,
+                    background:(d.day()===0||d.day()===6)?'rgba(241,245,249,0.7)':'transparent',
+                    borderRight:'1px solid #F8FAFC'}} />
+                ))}
+
+                {row.bars.map((bar, bi) => {
+                  const snap = getSnap(bar.taskIdx)
+                  const isDrag = !!snap
+                  const left = barLeft(bar.startDate) + 2
+                  const width = Math.max(barW(bar.startDate, bar.endDate) - 4, dayWidth - 4)
+                  const showLabel = width > dayWidth + 10
+                  const labelText = viewMode === 'worker'
+                    ? (showLabel ? `${(bar.jobNo||'').slice(-5)} ${bar.label}` : '')
+                    : (showLabel ? bar.label : '')
+
+                  return (
+                    <div key={bi}>
+                      {isDrag && (snap.dd !== 0 || snap.rd !== 0) && (
+                        <div style={{
+                          position:'absolute',top:'50%',transform:'translateY(-50%)',
+                          left,width,height:24,borderRadius:5,
+                          border:'2px dashed #CBD5E1',opacity:0.5,pointerEvents:'none',
+                        }} />
+                      )}
+                      <Tooltip title={isDrag ? '' : (
+                        <div>
+                          <div><strong>{viewMode==='worker' ? `${bar.jobNo} — ${bar.label}` : bar.label}</strong></div>
+                          <div>{bar.startDate} ~ {bar.endDate}</div>
+                          <div>작업자: {bar.worker || '미배정'}</div>
+                          <div>설비: {bar.equip || '—'}</div>
+                          {bar.warning && <div style={{color:'#FCA5A5'}}>⚠ {bar.warning}</div>}
+                        </div>
+                      )} open={isDrag ? false : undefined}>
+                        <div
+                          onMouseDown={e => onBarDown(e, bar, ri)}
+                          style={{
+                            position:'absolute',top:'50%',
+                            transform: isDrag ? `translateY(-50%) translate(${snap.sx}px,${snap.sy}px)` : 'translateY(-50%)',
+                            left,width,height:24,borderRadius:5,
+                            background: bar.status==='위험' ? '#EF4444' : pc(bar.label),
+                            opacity: isDrag ? 0.92 : 0.88,
+                            display:'flex',alignItems:'center',justifyContent:'center',
+                            fontSize:10,fontWeight:700,color:'#fff',
+                            cursor: isDrag ? 'grabbing' : 'grab',
+                            boxShadow: isDrag ? '0 4px 16px rgba(0,0,0,0.35)' : '0 1px 4px rgba(0,0,0,0.18)',
+                            border: bar.warning ? '2px solid #FCA5A5' : 'none',
+                            zIndex: isDrag ? 100 : 1,
+                            transition: isDrag ? 'none' : 'box-shadow 0.15s',
+                            userSelect:'none',
+                          }}
+                        >
+                          {isDrag && (snap.dd !== 0 || snap.rd !== 0) && (
+                            <div style={{
+                              position:'absolute',top:-22,left:'50%',transform:'translateX(-50%)',
+                              fontSize:10,background:'#1E293B',color:'#fff',
+                              padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',zIndex:101,
+                              boxShadow:'0 2px 8px rgba(0,0,0,0.3)',
+                            }}>
+                              {dayjs(bar.startDate).add(snap.dd,'day').format('M/D')}~{dayjs(bar.endDate).add(snap.dd,'day').format('M/D')}
+                              {snap.rd !== 0 && rows[Math.max(0,Math.min(rows.length-1,ri+snap.rd))]
+                                ? ` → ${rows[Math.max(0,Math.min(rows.length-1,ri+snap.rd))].workerName||''}` : ''}
+                            </div>
+                          )}
+                          {labelText}
+                        </div>
+                      </Tooltip>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+
+        {/* 범례 */}
+        <div style={{marginTop:16,display:'flex',gap:12,flexWrap:'wrap',padding:'8px 0',borderTop:'1px solid #F1F5F9'}}>
+          {Object.entries(PROC_COLOR).map(([name, color]) => (
+            <Space key={name} size={5}>
+              <div style={{width:12,height:12,borderRadius:3,background:color}} />
+              <Text style={{fontSize:11,color:'#64748B'}}>{name}</Text>
+            </Space>
+          ))}
+          <Space size={5}><div style={{width:2,height:12,background:'#3B82F6',opacity:0.5}} /><Text style={{fontSize:11,color:'#64748B'}}>오늘</Text></Space>
+          <Space size={5}><div style={{width:2,height:12,background:'#EF4444',opacity:0.5}} /><Text style={{fontSize:11,color:'#64748B'}}>납기</Text></Space>
+        </div>
       </div>
     </div>
   )
@@ -266,14 +435,14 @@ function WorkerPlanView({ workerPlan, dateRange }) {
 function TaskListView({ tasks }) {
   const cols = [
     { title:'제번', dataIndex:'jobNo', width:120, fixed:'left', render:v=><Text strong style={{color:'#3B82F6',fontSize:12,fontFamily:'monospace'}}>{v}</Text> },
-    { title:'제품명', dataIndex:'productName', ellipsis:true, render:v=><Text>{v}</Text> },
-    { title:'공정', dataIndex:'processName', width:90, render:v=><Tag style={{background:pc(v)+'20',color:pc(v),border:`1px solid ${pc(v)}55`,fontWeight:600,fontSize:11}}>{v}</Tag> },
-    { title:'수량', dataIndex:'qty', width:65, align:'center' },
+    { title:'제품명', dataIndex:'productName', width:160, ellipsis:true, render:v=><Text>{v}</Text> },
+    { title:'공정', dataIndex:'processName', render:v=><Tag style={{background:pc(v)+'20',color:pc(v),border:`1px solid ${pc(v)}55`,fontWeight:600,fontSize:11}}>{v}</Tag> },
+    { title:'수량', dataIndex:'qty', width:50, align:'center' },
     { title:'시작일', dataIndex:'startDate', width:100 },
     { title:'완료예정', dataIndex:'endDate', width:100,
       render:(v,r)=><Text style={{color:r.status==='위험'?'#EF4444':'',fontWeight:r.status==='위험'?700:400}}>{v}</Text> },
     { title:'납기일', dataIndex:'dueDate', width:100, render:v=><Text type="secondary">{v||'—'}</Text> },
-    { title:'작업자', dataIndex:'assignedWorker', width:120,
+    { title:'작업자', dataIndex:'assignedWorker', width:130,
       render:(v,r)=>(
         <Space direction="vertical" size={0}>
           <Text style={{fontSize:12,color:r.assignedWorkerList?.length?'':'#EF4444'}}>{v||'미배정'}</Text>
@@ -284,20 +453,24 @@ function TaskListView({ tasks }) {
           )}
         </Space>
       )},
-    { title:'설비', dataIndex:'assignedEquip', width:140, render:v=><Text style={{fontSize:12}}>{v||'—'}</Text> },
-    { title:'소요(h)', dataIndex:'hours', width:80, align:'center', render:v=><Text strong style={{color:'#7C3AED'}}>{v}h</Text> },
-    { title:'상태', dataIndex:'status', width:80,
+    { title:'설비', dataIndex:'assignedEquip', width:80, render:v=><Text style={{fontSize:12}}>{v||'—'}</Text> },
+    { title:'소요(h)', dataIndex:'hours', width:60, align:'center', render:v=><Text strong style={{color:'#7C3AED'}}>{v}h</Text> },
+    { title:'상태', dataIndex:'status', width:200,
       render:(v,r)=>(
-        <Space direction="vertical" size={0}>
+        <span style={{whiteSpace:'nowrap'}}>
           <Badge status={v==='위험'?'error':v==='주의'?'warning':v==='예정'?'processing':'default'} text={v} />
-          {r.warning && <Text style={{fontSize:10,color:v==='위험'?'#EF4444':'#F59E0B'}}>{r.warning}</Text>}
-        </Space>
+          {r.warning && <Text style={{fontSize:10,color:v==='위험'?'#EF4444':'#F59E0B',marginLeft:10}}>({r.warning})</Text>}
+        </span>
       )},
   ]
 
   return (
     <Table columns={cols} dataSource={tasks.map((t,i)=>({...t,key:i}))}
-      pagination={{pageSize:20,showTotal:t=>`총 ${t}건`}} size="small" scroll={{x:1100}} />
+      pagination={false} size="small"
+      bordered
+      style={{fontSize:12}}
+      rowClassName={() => 'compact-row'}
+    />
   )
 }
 
@@ -310,8 +483,7 @@ const PRIORITY_OPTIONS = [
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────
 export function AutoSchedule() {
   const [tasks, setTasks] = useState(null)
-  const [ganttData, setGanttData] = useState(null)
-  const [workerPlan, setWorkerPlan] = useState(null)
+  const [modifiedCount, setModifiedCount] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
   const [startDateStr, setStartDateStr] = useState(dayjs().format('YYYY-MM-DD'))
@@ -328,6 +500,9 @@ export function AutoSchedule() {
   const [workers, setWorkers] = useState(SAMPLE_WORKERS)
   const [equips, setEquips] = useState(SAMPLE_EQUIPS)
   const [usingRealData, setUsingRealData] = useState(false)
+
+  const ganttData = useMemo(() => tasks ? buildGanttData(tasks) : null, [tasks])
+  const workerPlan = useMemo(() => tasks ? buildWorkerDailyPlan(tasks, workers) : null, [tasks, workers])
 
   useEffect(() => {
     Promise.all([
@@ -370,11 +545,8 @@ export function AutoSchedule() {
     try {
       const row = await fetchScheduleById(id)
       const loaded = row.tasks
-      const gd = buildGanttData(loaded)
-      const wp = buildWorkerDailyPlan(loaded, workers)
       setTasks(loaded)
-      setGanttData(gd)
-      setWorkerPlan(wp)
+      setModifiedCount(0)
       setHistoryOpen(false)
       message.success(`"${row.label}" 불러왔습니다.`)
     } catch(e) { message.error('불러오기 실패: ' + e.message) }
@@ -394,11 +566,8 @@ export function AutoSchedule() {
       try {
         const startDate = new Date(startDateStr)
         const result = schedule(orders, routes, workers, equips, startDate, { priorityRule })
-        const gd = buildGanttData(result)
-        const wp = buildWorkerDailyPlan(result, workers)
         setTasks(result)
-        setGanttData(gd)
-        setWorkerPlan(wp)
+        setModifiedCount(0)
         message.success(`${result.length}개 작업 일정을 생성했습니다.`)
       } catch(e) {
         message.error(`스케줄링 오류: ${e.message}`)
@@ -407,6 +576,28 @@ export function AutoSchedule() {
         setGenerating(false)
       }
     }, 400)
+  }
+
+  const handleTaskUpdate = (taskIdx, updates) => {
+    const old = tasks[taskIdx]
+    const parts = []
+    if (updates.startDate) parts.push(`${old.startDate}~${old.endDate} → ${updates.startDate}~${updates.endDate}`)
+    if (updates.assignedWorkerName !== undefined) parts.push(`${old.assignedWorkerName || '미배정'} → ${updates.assignedWorkerName || '미배정'}`)
+    message.info(`${old.jobNo} ${old.processName}: ${parts.join(' / ')}`)
+
+    setTasks(prev => prev.map((t, i) => {
+      if (i !== taskIdx) return t
+      const u = { ...t, ...updates }
+      if (u.dueDate && dayjs(u.endDate).isAfter(dayjs(u.dueDate))) {
+        u.status = '위험'
+        u.warning = `납기(${u.dueDate}) 초과 예상`
+      } else if (u.status === '위험') {
+        u.status = '예정'
+        u.warning = null
+      }
+      return u
+    }))
+    setModifiedCount(c => c + 1)
   }
 
   // Gantt 날짜 범위 계산
@@ -430,7 +621,7 @@ export function AutoSchedule() {
       key: 'gantt',
       label: <Space><CalendarOutlined />Gantt 차트</Space>,
       children: ganttData
-        ? <GanttView ganttData={ganttData} startDate={ganttStart} endDate={ganttEnd} />
+        ? <GanttView ganttData={ganttData} tasks={tasks} workers={workers} startDate={ganttStart} endDate={ganttEnd} onTaskUpdate={handleTaskUpdate} />
         : <Empty description="좌측 상단에서 '자동 계획 생성'을 클릭하세요" />,
     },
     {
@@ -495,6 +686,7 @@ export function AutoSchedule() {
               계획 저장
             </Button>
           )}
+          {modifiedCount > 0 && <Tag color="orange" style={{fontSize:11}}>수동 조정 {modifiedCount}건</Tag>}
           <Button icon={<HistoryOutlined />} onClick={handleOpenHistory}>이력</Button>
         </Space>
       </div>

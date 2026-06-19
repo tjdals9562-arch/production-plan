@@ -182,8 +182,8 @@ export function schedule(orders, routes, workers, equips, startDate = new Date()
         ? (bestWorker.dayHours || 8) + (bestWorker.overtime || 0)
         : 8
       const equipDayHours   = bestEquip ? (bestEquip.dayHours || 8) : 24
-      const parallelFactor  = assignedWorkerList.length  // 병렬 작업자 수
-      const effectiveDayHours = Math.min(workerDayHours * parallelFactor, equipDayHours)
+      const parallelFactor  = Math.max(1, assignedWorkerList.length)
+      const effectiveDayHours = Math.max(1, Math.min(workerDayHours * parallelFactor, equipDayHours))
 
       // ── 근무일 기준 기간 계산 ─────────────────────────────────
       const workDays = bestWorker?.days || ['월','화','수','목','금']
@@ -192,12 +192,14 @@ export function schedule(orders, routes, workers, equips, startDate = new Date()
       let curDay  = startDay.clone()
       let endDay  = startDay.clone()
 
-      while (remainHours > 0) {
+      let loopGuard = 0
+      while (remainHours > 0 && loopGuard < 365) {
         if (isWorkDay(curDay, workDays)) {
           remainHours -= effectiveDayHours
           endDay = curDay.clone()
         }
         if (remainHours > 0) curDay = curDay.add(1, 'day')
+        loopGuard++
       }
 
       // ── task 객체 생성 ─────────────────────────────────────────
@@ -297,11 +299,12 @@ export function buildWorkerDailyPlan(tasks, workers) {
  */
 export function buildGanttData(tasks) {
   const jobs = {}
-  tasks.forEach(t => {
+  tasks.forEach((t, idx) => {
     if (!jobs[t.jobNo]) {
       jobs[t.jobNo] = { jobNo:t.jobNo, productName:t.productName, dueDate:t.dueDate, qty:t.qty, bars:[] }
     }
     jobs[t.jobNo].bars.push({
+      taskIdx: idx,
       seq: t.seq,
       label: t.processName,
       startDate: t.startDate,
