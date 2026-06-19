@@ -607,21 +607,25 @@ function WorkerMaster() {
 
   const openEdit = (w = null) => {
     setEditWorker(w)
-    form.setFieldsValue(w ? { ...w } : { days:['월','화','수','목','금'], dayHours:8, overtime:0 })
     setModalOpen(true)
+    setTimeout(() => {
+      form.resetFields()
+      form.setFieldsValue(w ? { ...w } : { days:['월','화','수','목','금'], dayHours:8, overtime:0 })
+    }, 0)
   }
 
-  const handleSave = () => {
-    form.validateFields().then(async vals => {
-      setSaving(true)
-      try {
-        const merged = editWorker ? { ...editWorker, ...vals } : vals
-        await saveWorker(merged, !editWorker)
-        await loadWorkers()
-        setModalOpen(false)
-      } catch(e) { message.error('저장 실패: ' + e.message) }
-      finally { setSaving(false) }
-    })
+  const handleSave = async () => {
+    let vals
+    try { vals = await form.validateFields() } catch { return }
+    setSaving(true)
+    try {
+      const merged = editWorker ? { ...editWorker, ...vals } : vals
+      await saveWorker(merged, !editWorker)
+      await loadWorkers()
+      setModalOpen(false)
+      message.success('저장되었습니다.')
+    } catch(e) { message.error('저장 실패: ' + e.message) }
+    finally { setSaving(false) }
   }
 
   const cols = [
@@ -771,21 +775,25 @@ function EquipMaster() {
 
   const openEdit = (eq = null) => {
     setEditEquip(eq)
-    form.setFieldsValue(eq ? { ...eq } : { shift:'주간', status:'가동', dayHours:8, setupTime:0.5 })
     setModalOpen(true)
+    setTimeout(() => {
+      form.resetFields()
+      form.setFieldsValue(eq ? { ...eq } : { shift:'주간', status:'가동', dayHours:8, setupTime:0.5 })
+    }, 0)
   }
 
-  const handleSave = () => {
-    form.validateFields().then(async vals => {
-      setSaving(true)
-      try {
-        const merged = editEquip ? { ...editEquip, ...vals } : vals
-        await saveEquipment(merged, !editEquip)
-        await loadEquipment()
-        setModalOpen(false)
-      } catch(e) { message.error('저장 실패: ' + e.message) }
-      finally { setSaving(false) }
-    })
+  const handleSave = async () => {
+    let vals
+    try { vals = await form.validateFields() } catch { return }
+    setSaving(true)
+    try {
+      const merged = editEquip ? { ...editEquip, ...vals } : vals
+      await saveEquipment(merged, !editEquip)
+      await loadEquipment()
+      setModalOpen(false)
+      message.success('저장되었습니다.')
+    } catch(e) { message.error('저장 실패: ' + e.message) }
+    finally { setSaving(false) }
   }
 
   const cols = [
@@ -903,20 +911,24 @@ function ProcessMaster() {
 
   const openEdit = (p = null) => {
     setEditProc(p)
-    form.setFieldsValue(p ? { ...p } : { isActive: true, sortOrder: (processes.length + 1) * 5, stdTime: 0 })
     setModalOpen(true)
+    setTimeout(() => {
+      form.resetFields()
+      form.setFieldsValue(p ? { ...p } : { isActive: true, sortOrder: (processes.length + 1) * 5, stdTime: 0 })
+    }, 0)
   }
 
-  const handleSave = () => {
-    form.validateFields().then(async vals => {
-      setSaving(true)
-      try {
-        await saveProcess(editProc ? { ...editProc, ...vals } : vals, !editProc)
-        await loadProcesses()
-        setModalOpen(false)
-      } catch(e) { message.error('저장 실패: ' + e.message) }
-      finally { setSaving(false) }
-    })
+  const handleSave = async () => {
+    let vals
+    try { vals = await form.validateFields() } catch { return }
+    setSaving(true)
+    try {
+      await saveProcess(editProc ? { ...editProc, ...vals } : vals, !editProc)
+      await loadProcesses()
+      setModalOpen(false)
+      message.success('저장되었습니다.')
+    } catch(e) { message.error('저장 실패: ' + e.message) }
+    finally { setSaving(false) }
   }
 
   const deptGroups = useMemo(() => {
