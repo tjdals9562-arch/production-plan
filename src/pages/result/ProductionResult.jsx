@@ -1,4 +1,4 @@
-﻿import { Table, Card, Form, Row, Col, Input, Select, DatePicker, Button, Space, Tag, Typography, Statistic, Steps, Progress, Badge } from 'antd'
+﻿import { Table, Card, Form, Row, Col, Input, Select, DatePicker, Button, Space, Tag, Typography, Steps, Progress } from 'antd'
 import { SaveOutlined, ClearOutlined } from '@ant-design/icons'
 
 const { Title, Text } = Typography
@@ -9,11 +9,6 @@ const RESULTS = [
   { key:3, date:'2026-05-28', wo:'WO-2605-004', product:'구조체 브라켓 SET', process:'프레스', worker:'정수진', plan:3, actual:2, defect:1, note:'찍힘 불량 1EA → 재작업' },
   { key:4, date:'2026-05-27', wo:'WO-2605-001', product:'EL-2000 카케이스', process:'벤딩',   worker:'김철수', plan:3, actual:3, defect:0, note:'' },
   { key:5, date:'2026-05-27', wo:'WO-2605-003', product:'제관 판넬 A타입',  process:'도장',   worker:'박민준', plan:5, actual:5, defect:0, note:'' },
-]
-
-const DEFECTS = [
-  { key:1, date:'2026-05-28', wo:'WO-2605-004', product:'구조체 브라켓', process:'프레스', type:'찍힘',  qty:1, action:'재작업',   status:'재작업중' },
-  { key:2, date:'2026-05-25', wo:'WO-2605-002', product:'HH-프레임',    process:'용접',   type:'기공',  qty:1, action:'보수용접', status:'완료' },
 ]
 
 const PROCESS_STEPS = [
@@ -34,16 +29,6 @@ const resultColumns = [
   { title:'비고', dataIndex:'note', render:v=><Text type="secondary" style={{fontSize:12}}>{v||'—'}</Text> },
 ]
 
-const defectColumns = [
-  { title:'발생일', dataIndex:'date', width:100 },
-  { title:'작업지시', dataIndex:'wo', width:120, render:v=><Text strong style={{color:'#3B82F6',fontSize:12}}>{v}</Text> },
-  { title:'제품명', dataIndex:'product', render:v=><Text strong>{v}</Text> },
-  { title:'공정', dataIndex:'process', width:80, render:v=><Tag>{v}</Tag> },
-  { title:'불량유형', dataIndex:'type', width:90, render:v=><Text strong style={{color:'#EF4444'}}>{v}</Text> },
-  { title:'수량', dataIndex:'qty', width:60, align:'center', render:v=><Text strong style={{color:'#EF4444'}}>{v}</Text> },
-  { title:'조치내용', dataIndex:'action' },
-  { title:'처리상태', dataIndex:'status', width:90, render:v=><Badge status={v==='완료'?'success':'warning'} text={v} /> },
-]
 
 function ResultInput() {
   const [form] = Form.useForm()
@@ -122,28 +107,6 @@ function ResultProcess() {
   )
 }
 
-function DefectStatus() {
-  return (
-    <div>
-      <div style={{marginBottom:20}}>
-        <Title level={4} style={{margin:0}}>불량 현황</Title>
-        <Text type="secondary">공정별 불량 발생 및 처리 현황</Text>
-      </div>
-      <Row gutter={12} style={{marginBottom:16}}>
-        {[{l:'이번달 불량',v:'2건',c:'#EF4444'},{l:'재작업중',v:'1건',c:'#F59E0B'},{l:'처리완료',v:'1건',c:'#10B981'},{l:'불량률',v:'0.8%',c:'#3B82F6'}].map((s,i)=>(
-          <Col key={i} span={6}>
-            <Card bordered={false} style={{borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,0.06)',borderTop:`3px solid ${s.c}`}} styles={{body:{padding:'14px 16px'}}}>
-              <Statistic title={<Text style={{fontSize:12,color:'#64748B'}}>{s.l}</Text>} value={s.v} valueStyle={{fontSize:20,fontWeight:800,color:s.c}} />
-            </Card>
-          </Col>
-        ))}
-      </Row>
-      <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
-        <Table columns={defectColumns} dataSource={DEFECTS} pagination={false} size="small" bordered />
-      </Card>
-    </div>
-  )
-}
 
 function PlaceholderPage({ title }) {
   return (
@@ -157,6 +120,5 @@ function PlaceholderPage({ title }) {
 export function ProductionResult({ sub }) {
   if (!sub || sub==='resultInput') return <ResultInput />
   if (sub==='resultProcess') return <ResultProcess />
-  if (sub==='resultDefect') return <DefectStatus />
   return <PlaceholderPage title={sub} />
 }
