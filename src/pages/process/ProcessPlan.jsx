@@ -12,6 +12,12 @@ import { PlusOutlined, PrinterOutlined, DownloadOutlined, SettingOutlined,
   InboxOutlined, FileExcelOutlined, CheckCircleOutlined, EditOutlined, DeleteOutlined,
   ArrowRightOutlined, ClockCircleOutlined, TeamOutlined, ToolOutlined, SearchOutlined } from '@ant-design/icons'
 import * as XLSX from 'xlsx'
+import {
+  downloadProcessTemplate, parseProcessExcel,
+  downloadWorkerTemplate, parseWorkerExcel,
+  downloadEquipTemplate, parseEquipExcel,
+  downloadRouteTemplate,
+} from '../../utils/excelTemplates.js'
 
 const { Title, Text } = Typography
 
@@ -481,6 +487,7 @@ function ProcessRouteMaster() {
           <FileExcelOutlined style={{fontSize:16,color:'#10B981'}} />
           <Text strong>공정정보 엑셀 업로드</Text>
           <Text type="secondary" style={{fontSize:12}}>— 제품별 공정라우팅 엑셀을 드래그하세요</Text>
+          <Button size="small" icon={<DownloadOutlined />} onClick={downloadRouteTemplate}>양식 다운로드</Button>
           <Tooltip title={
             <div>
               <div style={{fontWeight:700,marginBottom:4}}>필요 컬럼명 (순서 무관)</div>
@@ -583,6 +590,7 @@ function WorkerMaster() {
   const [modalOpen, setModalOpen] = useState(false)
   const [form] = Form.useForm()
   const [procOpts, setProcOpts] = useState(ALL_PROCESSES.map(p=>({label:p,value:p})))
+  const [parsing, setParsing] = useState(false)
 
   useEffect(() => {
     fetchProcesses()
@@ -604,6 +612,21 @@ function WorkerMaster() {
   }
 
   useEffect(() => { loadWorkers() }, [])
+
+  const handleWorkerFile = useCallback(async file => {
+    if (!/\.(xlsx?|xls)$/i.test(file.name)) { message.error('xlsx/xls 파일만 가능합니다'); return false }
+    setParsing(true)
+    try {
+      const rows = await parseWorkerExcel(file)
+      if (!rows.length) { message.warning('작업자 데이터를 찾을 수 없습니다'); return false }
+      let count = 0
+      for (const r of rows) { await saveWorker(r, true); count++ }
+      message.success(`${count}명 업로드 완료`)
+      await loadWorkers()
+    } catch (e) { message.error(`파싱 오류: ${e.message}`) }
+    finally { setParsing(false) }
+    return false
+  }, [])
 
   const openEdit = (w = null) => {
     setEditWorker(w)
@@ -690,6 +713,27 @@ function WorkerMaster() {
         ))}
       </Row>
 
+      <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:20}}>
+        <div style={{marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+          <FileExcelOutlined style={{fontSize:16,color:'#10B981'}} />
+          <Text strong>엑셀 일괄 등록</Text>
+          <Button size="small" icon={<DownloadOutlined />} onClick={downloadWorkerTemplate}>양식 다운로드</Button>
+        </div>
+        <div
+          onDragOver={e=>{ e.preventDefault(); e.currentTarget.style.borderColor='#3B82F6'; e.currentTarget.style.background='rgba(59,130,246,0.04)' }}
+          onDragLeave={e=>{ e.currentTarget.style.borderColor=''; e.currentTarget.style.background='' }}
+          onDrop={e=>{ e.preventDefault(); e.currentTarget.style.borderColor=''; e.currentTarget.style.background=''; const f=e.dataTransfer.files[0]; if(f) handleWorkerFile(f) }}
+          onClick={()=>document.getElementById('workerExcelInput').click()}
+          style={{border:'2px dashed #CBD5E1',borderRadius:10,padding:'16px',textAlign:'center',cursor:'pointer',background:'#FAFBFC'}}
+        >
+          <input id="workerExcelInput" type="file" accept=".xlsx,.xls" style={{display:'none'}}
+            onChange={e=>{ if(e.target.files[0]) handleWorkerFile(e.target.files[0]); e.target.value='' }} />
+          {parsing
+            ? <Text type="secondary">파싱 중...</Text>
+            : <Text type="secondary" style={{fontSize:13}}>작업자마스터 엑셀 파일을 드래그하거나 클릭하여 선택</Text>}
+        </div>
+      </Card>
+
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
         <div style={{marginBottom:12,textAlign:'right'}}>
           <Button type="primary" icon={<PlusOutlined />} onClick={()=>openEdit()}
@@ -751,6 +795,7 @@ function EquipMaster() {
   const [modalOpen, setModalOpen] = useState(false)
   const [form] = Form.useForm()
   const [procOpts, setProcOpts] = useState(ALL_PROCESSES.map(p=>({label:p,value:p})))
+  const [parsing, setParsing] = useState(false)
 
   useEffect(() => {
     fetchProcesses()
@@ -772,6 +817,21 @@ function EquipMaster() {
   }
 
   useEffect(() => { loadEquipment() }, [])
+
+  const handleEquipFile = useCallback(async file => {
+    if (!/\.(xlsx?|xls)$/i.test(file.name)) { message.error('xlsx/xls 파일만 가능합니다'); return false }
+    setParsing(true)
+    try {
+      const rows = await parseEquipExcel(file)
+      if (!rows.length) { message.warning('설비 데이터를 찾을 수 없습니다'); return false }
+      let count = 0
+      for (const r of rows) { await saveEquipment(r, true); count++ }
+      message.success(`${count}대 업로드 완료`)
+      await loadEquipment()
+    } catch (e) { message.error(`파싱 오류: ${e.message}`) }
+    finally { setParsing(false) }
+    return false
+  }, [])
 
   const openEdit = (eq = null) => {
     setEditEquip(eq)
@@ -844,6 +904,27 @@ function EquipMaster() {
         ))}
       </Row>
 
+      <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:20}}>
+        <div style={{marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+          <FileExcelOutlined style={{fontSize:16,color:'#10B981'}} />
+          <Text strong>엑셀 일괄 등록</Text>
+          <Button size="small" icon={<DownloadOutlined />} onClick={downloadEquipTemplate}>양식 다운로드</Button>
+        </div>
+        <div
+          onDragOver={e=>{ e.preventDefault(); e.currentTarget.style.borderColor='#3B82F6'; e.currentTarget.style.background='rgba(59,130,246,0.04)' }}
+          onDragLeave={e=>{ e.currentTarget.style.borderColor=''; e.currentTarget.style.background='' }}
+          onDrop={e=>{ e.preventDefault(); e.currentTarget.style.borderColor=''; e.currentTarget.style.background=''; const f=e.dataTransfer.files[0]; if(f) handleEquipFile(f) }}
+          onClick={()=>document.getElementById('equipExcelInput').click()}
+          style={{border:'2px dashed #CBD5E1',borderRadius:10,padding:'16px',textAlign:'center',cursor:'pointer',background:'#FAFBFC'}}
+        >
+          <input id="equipExcelInput" type="file" accept=".xlsx,.xls" style={{display:'none'}}
+            onChange={e=>{ if(e.target.files[0]) handleEquipFile(e.target.files[0]); e.target.value='' }} />
+          {parsing
+            ? <Text type="secondary">파싱 중...</Text>
+            : <Text type="secondary" style={{fontSize:13}}>설비마스터 엑셀 파일을 드래그하거나 클릭하여 선택</Text>}
+        </div>
+      </Card>
+
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
         <div style={{marginBottom:12,textAlign:'right'}}>
           <Button type="primary" icon={<PlusOutlined />} onClick={()=>openEdit()}
@@ -891,6 +972,7 @@ function ProcessMaster() {
   const [editProc, setEditProc] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [form] = Form.useForm()
+  const [parsing, setParsing] = useState(false)
 
   const deptSuggest = useMemo(() => {
     const extra = [...new Set(processes.map(p => p.dept).filter(Boolean))]
@@ -908,6 +990,21 @@ function ProcessMaster() {
   }
 
   useEffect(() => { loadProcesses() }, [])
+
+  const handleProcessFile = useCallback(async file => {
+    if (!/\.(xlsx?|xls)$/i.test(file.name)) { message.error('xlsx/xls 파일만 가능합니다'); return false }
+    setParsing(true)
+    try {
+      const rows = await parseProcessExcel(file)
+      if (!rows.length) { message.warning('공정 데이터를 찾을 수 없습니다'); return false }
+      let count = 0
+      for (const r of rows) { await saveProcess(r, true); count++ }
+      message.success(`${count}건 업로드 완료`)
+      await loadProcesses()
+    } catch (e) { message.error(`파싱 오류: ${e.message}`) }
+    finally { setParsing(false) }
+    return false
+  }, [])
 
   const openEdit = (p = null) => {
     setEditProc(p)
@@ -989,6 +1086,27 @@ function ProcessMaster() {
           </Col>
         ))}
       </Row>
+
+      <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:20}}>
+        <div style={{marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+          <FileExcelOutlined style={{fontSize:16,color:'#10B981'}} />
+          <Text strong>엑셀 일괄 등록</Text>
+          <Button size="small" icon={<DownloadOutlined />} onClick={downloadProcessTemplate}>양식 다운로드</Button>
+        </div>
+        <div
+          onDragOver={e=>{ e.preventDefault(); e.currentTarget.style.borderColor='#3B82F6'; e.currentTarget.style.background='rgba(59,130,246,0.04)' }}
+          onDragLeave={e=>{ e.currentTarget.style.borderColor=''; e.currentTarget.style.background='' }}
+          onDrop={e=>{ e.preventDefault(); e.currentTarget.style.borderColor=''; e.currentTarget.style.background=''; const f=e.dataTransfer.files[0]; if(f) handleProcessFile(f) }}
+          onClick={()=>document.getElementById('procExcelInput').click()}
+          style={{border:'2px dashed #CBD5E1',borderRadius:10,padding:'16px',textAlign:'center',cursor:'pointer',background:'#FAFBFC'}}
+        >
+          <input id="procExcelInput" type="file" accept=".xlsx,.xls" style={{display:'none'}}
+            onChange={e=>{ if(e.target.files[0]) handleProcessFile(e.target.files[0]); e.target.value='' }} />
+          {parsing
+            ? <Text type="secondary">파싱 중...</Text>
+            : <Text type="secondary" style={{fontSize:13}}>공정마스터 엑셀 파일을 드래그하거나 클릭하여 선택</Text>}
+        </div>
+      </Card>
 
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
         <div style={{marginBottom:12,display:'flex',justifyContent:'flex-end'}}>
