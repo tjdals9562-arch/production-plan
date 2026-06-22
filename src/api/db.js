@@ -179,8 +179,9 @@ export async function saveWorker(worker, isNew) {
 }
 
 export async function deleteWorkerById(id) {
-  const { error } = await supabase.from('workers').delete().eq('id', parseInt(id))
+  const { data, error } = await supabase.from('workers').delete().eq('id', parseInt(id)).select()
   if (error) throw error
+  if (!data?.length) throw new Error('삭제 실패 — Supabase RLS 정책을 확인하세요')
 }
 
 export async function seedWorkers(workers) {
@@ -239,8 +240,9 @@ export async function saveEquipment(equip, isNew) {
 }
 
 export async function deleteEquipmentById(id) {
-  const { error } = await supabase.from('equipment').delete().eq('id', parseInt(id))
+  const { data, error } = await supabase.from('equipment').delete().eq('id', parseInt(id)).select()
   if (error) throw error
+  if (!data?.length) throw new Error('삭제 실패 — Supabase RLS 정책을 확인하세요')
 }
 
 export async function seedEquipment(equips) {
@@ -315,8 +317,9 @@ export async function upsertProcessRoute(route) {
 }
 
 export async function deleteProcessRouteById(id) {
-  const { error } = await supabase.from('process_routes').delete().eq('id', parseInt(id))
+  const { data, error } = await supabase.from('process_routes').delete().eq('id', parseInt(id)).select()
   if (error) throw error
+  if (!data?.length) throw new Error('삭제 실패 — Supabase RLS 정책을 확인하세요')
 }
 
 export async function seedProcessRoutes(routes) {
@@ -371,8 +374,9 @@ export async function saveProcess(proc, isNew) {
 }
 
 export async function deleteProcessById(id) {
-  const { error } = await supabase.from('processes').delete().eq('id', parseInt(id))
+  const { data, error } = await supabase.from('processes').delete().eq('id', parseInt(id)).select()
   if (error) throw error
+  if (!data?.length) throw new Error('삭제 실패 — Supabase RLS 정책을 확인하세요')
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -415,6 +419,58 @@ export async function fetchScheduleById(id) {
 
 export async function deleteSchedule(id) {
   const { error } = await supabase.from('schedule_results').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SCHEDULE RULES (스케줄 규칙)
+// ═══════════════════════════════════════════════════════════════════
+
+function toRule(r) {
+  return {
+    id:          String(r.id),
+    ruleType:    r.rule_type     ?? '',
+    targetName:  r.target_name   ?? '',
+    days:        Array.isArray(r.days) ? r.days : [],
+    processName: r.process_name  ?? '',
+    equipName:   r.equip_name    ?? '',
+    isActive:    r.is_active     ?? true,
+    note:        r.note          ?? '',
+  }
+}
+
+function fromRule(rule) {
+  return {
+    rule_type:    rule.ruleType    || null,
+    target_name:  rule.targetName  || null,
+    days:         rule.days        ?? [],
+    process_name: rule.processName || null,
+    equip_name:   rule.equipName   || null,
+    is_active:    rule.isActive    ?? true,
+    note:         rule.note        ?? '',
+  }
+}
+
+export async function fetchScheduleRules() {
+  const { data, error } = await supabase
+    .from('schedule_rules').select('*').order('id')
+  if (error) throw error
+  return data.map(toRule)
+}
+
+export async function saveScheduleRule(rule, isNew) {
+  const row = fromRule(rule)
+  if (!isNew && rule.id) {
+    const { error } = await supabase.from('schedule_rules').update(row).eq('id', parseInt(rule.id))
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('schedule_rules').insert(row)
+    if (error) throw error
+  }
+}
+
+export async function deleteScheduleRule(id) {
+  const { error } = await supabase.from('schedule_rules').delete().eq('id', parseInt(id))
   if (error) throw error
 }
 

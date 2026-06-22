@@ -561,23 +561,22 @@ export function AutoSchedule() {
     } catch { message.error('삭제 실패') }
   }
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setGenerating(true)
-    setTimeout(() => {
-      try {
-        const startDate = new Date(startDateStr)
-        const activeRules = loadScheduleRules()
-        const result = schedule(orders, routes, workers, equips, startDate, { priorityRule, rules: activeRules })
-        setTasks(result)
-        setModifiedCount(0)
-        message.success(`${result.length}개 작업 일정을 생성했습니다.`)
-      } catch(e) {
-        message.error(`스케줄링 오류: ${e.message}`)
-        console.error(e)
-      } finally {
-        setGenerating(false)
-      }
-    }, 400)
+    try {
+      const startDate = new Date(startDateStr)
+      const activeRules = await loadScheduleRules()
+      const result = schedule(orders, routes, workers, equips, startDate, { priorityRule, rules: activeRules })
+      setTasks(result)
+      setModifiedCount(0)
+      const ruleCount = activeRules.length
+      message.success(`${result.length}개 작업 일정 생성${ruleCount ? ` (규칙 ${ruleCount}건 적용)` : ''}`)
+    } catch(e) {
+      message.error(`스케줄링 오류: ${e.message}`)
+      console.error(e)
+    } finally {
+      setGenerating(false)
+    }
   }
 
   const handleTaskUpdate = (taskIdx, updates) => {

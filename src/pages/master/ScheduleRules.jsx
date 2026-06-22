@@ -6,7 +6,10 @@ import {
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
-import { fetchProcesses, fetchWorkers, fetchEquipment } from '../../api/db.js'
+import {
+  fetchProcesses, fetchWorkers, fetchEquipment,
+  fetchScheduleRules, saveScheduleRule, deleteScheduleRule as deleteRuleFromDB,
+} from '../../api/db.js'
 
 const { Title, Text } = Typography
 
@@ -20,7 +23,7 @@ const RULE_TYPES = [
   { value: 'process_equip',label: '공정 설비 지정',    desc: '특정 공정은 반드시 특정 설비 사용',          color: '#7C3AED' },
 ]
 
-function loadRules() {
+function loadRulesFromStorage() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] }
 }
 
@@ -28,8 +31,15 @@ function saveRulesToStorage(rules) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rules))
 }
 
-export function loadScheduleRules() {
-  return loadRules().filter(r => r.isActive)
+export async function loadScheduleRules() {
+  try {
+    const rules = await fetchScheduleRules()
+    if (rules.length) {
+      saveRulesToStorage(rules)
+      return rules.filter(r => r.isActive)
+    }
+  } catch {}
+  return loadRulesFromStorage().filter(r => r.isActive)
 }
 
 function ruleToSentence(r) {
@@ -59,8 +69,24 @@ export function ScheduleRules() {
   const [processOpts, setProcessOpts] = useState([])
   const [workerOpts, setWorkerOpts] = useState([])
   const [equipOpts, setEquipOpts] = useState([])
+  const [useDB, setUseDB] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => { setRules(loadRules()) }, [])
+  const loadAll = async () => {
+    setLoading(true)
+    try {
+      const dbRules = await fetchScheduleRules()
+      setRules(dbRules)
+      saveRulesToStorage(dbRules)
+      setUseDB(true)
+    } catch {
+      setRules(loadRulesFromStorage())
+      setUseDB(false)
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadAll() }, [])
 
   useEffect(() => {
     Promise.all([
@@ -96,23 +122,46 @@ export function ScheduleRules() {
     let vals
     try { vals = await form.validateFields() } catch { return }
 
-    if (editRule) {
-      persist(rules.map(r => r.id === editRule.id ? { ...r, ...vals } : r))
-    } else {
-      const newRule = { ...vals, id: Date.now().toString() }
-      persist([...rules, newRule])
+    try {
+      if (useDB) {
+        const merged = editRule ? { ...editRule, ...vals } : vals
+        await saveScheduleRule(merged, !editRule)
+        await loadAll()
+      } else {
+        if (editRule) {
+          persist(rules.map(r => r.id === editRule.id ? { ...r, ...vals } : r))
+        } else {
+          persist([...rules, { ...vals, id: Date.now().toString() }])
+        }
+      }
+    } catch (e) {
+      if (editRule) {
+        persist(rules.map(r => r.id === editRule.id ? { ...r, ...vals } : r))
+      } else {
+        persist([...rules, { ...vals, id: Date.now().toString() }])
+      }
     }
     setModalOpen(false)
     message.success('규칙이 저장되었습니다.')
   }
 
-  const handleDelete = (id) => {
-    persist(rules.filter(r => r.id !== id))
+  const handleDelete = async (id) => {
+    try {
+      if (useDB) { await deleteRuleFromDB(id); await loadAll() }
+      else { persist(rules.filter(r => r.id !== id)) }
+    } catch { persist(rules.filter(r => r.id !== id)) }
     message.success('삭제되었습니다.')
   }
 
-  const handleToggle = (id, checked) => {
-    persist(rules.map(r => r.id === id ? { ...r, isActive: checked } : r))
+  const handleToggle = async (id, checked) => {
+    const updated = rules.map(r => r.id === id ? { ...r, isActive: checked } : r)
+    persist(updated)
+    try {
+      if (useDB) {
+        const rule = updated.find(r => r.id === id)
+        if (rule) await saveScheduleRule(rule, false)
+      }
+    } catch {}
   }
 
   const targetOptions = () => {
