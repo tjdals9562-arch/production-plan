@@ -17,6 +17,7 @@ import {
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { schedule, buildWorkerDailyPlan, buildGanttData } from '../../utils/scheduler.js'
+import { loadScheduleRules } from '../master/ScheduleRules.jsx'
 import { fetchOrders, fetchProcessRoutes, fetchWorkers, fetchEquipment,
   saveSchedule, fetchSchedules, fetchScheduleById, deleteSchedule } from '../../api/db.js'
 import { SaveOutlined, HistoryOutlined } from '@ant-design/icons'
@@ -565,7 +566,8 @@ export function AutoSchedule() {
     setTimeout(() => {
       try {
         const startDate = new Date(startDateStr)
-        const result = schedule(orders, routes, workers, equips, startDate, { priorityRule })
+        const activeRules = loadScheduleRules()
+        const result = schedule(orders, routes, workers, equips, startDate, { priorityRule, rules: activeRules })
         setTasks(result)
         setModifiedCount(0)
         message.success(`${result.length}개 작업 일정을 생성했습니다.`)

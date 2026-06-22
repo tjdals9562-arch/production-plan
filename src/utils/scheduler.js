@@ -17,11 +17,47 @@ import dayjs from 'dayjs'
 
 // 요일 문자 → dayjs 요일 번호 (0=일, 1=월, ... 6=토)
 const DAY_NUM = { '일':0,'월':1,'화':2,'수':3,'목':4,'금':5,'토':6 }
+const DAY_STR = ['일','월','화','수','목','금','토']
 
 // 날짜 d가 근무일인지 확인 (workDays: ['월','화','수','목','금'])
 function isWorkDay(d, workDays) {
   const dayOfWeek = d.day()
   return workDays.some(dk => DAY_NUM[dk] === dayOfWeek)
+}
+
+// 규칙 기반: 해당 날짜에 이 공정 작업이 가능한지 확인
+function isProcessAllowedOnDay(d, processName, rules) {
+  if (!rules?.length) return true
+  const dayStr = DAY_STR[d.day()]
+  const processRules = rules.filter(r => r.ruleType === 'process_day' && r.targetName === processName)
+  if (!processRules.length) return true
+  return processRules.some(r => (r.days || []).includes(dayStr))
+}
+
+// 규칙 기반: 해당 날짜에 이 설비가 사용 가능한지 확인
+function isEquipAllowedOnDay(d, equipName, rules) {
+  if (!rules?.length) return true
+  const dayStr = DAY_STR[d.day()]
+  const blockRules = rules.filter(r => r.ruleType === 'equip_block' && r.targetName === equipName)
+  if (!blockRules.length) return true
+  return !blockRules.some(r => (r.days || []).includes(dayStr))
+}
+
+// 규칙 기반: 작업자 고정 규칙 적용 — 해당 날짜에 고정 공정이 있는지
+function getWorkerFixedProcess(d, workerName, rules) {
+  if (!rules?.length) return null
+  const dayStr = DAY_STR[d.day()]
+  const fixRule = rules.find(r =>
+    r.ruleType === 'worker_fix' && r.targetName === workerName && (r.days || []).includes(dayStr)
+  )
+  return fixRule?.processName || null
+}
+
+// 규칙 기반: 공정에 지정된 설비가 있는지
+function getRequiredEquip(processName, rules) {
+  if (!rules?.length) return null
+  const rule = rules.find(r => r.ruleType === 'process_equip' && r.targetName === processName)
+  return rule?.equipName || null
 }
 
 // d 이후 첫 근무일 (당일 포함)
@@ -65,7 +101,7 @@ function calcSlack(order, routes, baseDate) {
  * options.priorityRule: 'EDD'(납기우선) | 'SLACK'(여유시간우선) | 'FIFO'(투입순)
  */
 export function schedule(orders, routes, workers, equips, startDate = new Date(), options = {}) {
-  const { priorityRule = 'EDD' } = options
+  const { priorityRule = 'EDD', rules = [] } = options
   const baseDate = dayjs(startDate)
 
   const activeOrders = [...orders].filter(o => (o.remainQty || o.orderQty || 0) > 0)
@@ -130,10 +166,21 @@ export function schedule(orders, routes, workers, equips, startDate = new Date()
 
       // 담당 가능 작업자 (주력 우선 정렬)
       const capWorkers = getCapableWorkers(proc.name, workers)
-      const capEquips  = getCapableEquips(proc.name, equips)
+      const requiredEquipName = getRequiredEquip(proc.name, rules)
+      let capEquips = getCapableEquips(proc.name, equips)
+      if (requiredEquipName) {
+        const forced = capEquips.filter(e => e.name === requiredEquipName)
+        if (forced.length) capEquips = forced
+      }
+      // 작업자 고정 규칙: 해당 공정에 고정된 작업자 우선
+      const fixedWorkers = capWorkers.filter(w => {
+        const fixed = getWorkerFixedProcess(prevEndDate || baseDate, w.name, rules)
+        return fixed === proc.name
+      })
       const prioritized = [
-        ...capWorkers.filter(w => w.primary === proc.name),
-        ...capWorkers.filter(w => w.primary !== proc.name),
+        ...fixedWorkers,
+        ...capWorkers.filter(w => w.primary === proc.name && !fixedWorkers.includes(w)),
+        ...capWorkers.filter(w => w.primary !== proc.name && !fixedWorkers.includes(w)),
       ]
 
       // ── 다수 작업자 배정 ─────────────────────────────────────
@@ -185,16 +232,27 @@ export function schedule(orders, routes, workers, equips, startDate = new Date()
       const parallelFactor  = Math.max(1, assignedWorkerList.length)
       const effectiveDayHours = Math.max(1, Math.min(workerDayHours * parallelFactor, equipDayHours))
 
-      // ── 근무일 기준 기간 계산 ─────────────────────────────────
+      // ── 근무일 기준 기간 계산 (규칙 반영) ─────────────────────
       const workDays = bestWorker?.days || ['월','화','수','목','금']
       let startDay   = nextWorkDay(constraintDate, workDays)
+      // 공정 요일 제한 규칙: 시작일이 허용 요일이 아니면 다음 허용일로
+      let sdGuard = 0
+      while (!isProcessAllowedOnDay(startDay, proc.name, rules) && sdGuard < 14) {
+        startDay = startDay.add(1, 'day')
+        startDay = nextWorkDay(startDay, workDays)
+        sdGuard++
+      }
+
       let remainHours = totalHours
       let curDay  = startDay.clone()
       let endDay  = startDay.clone()
 
       let loopGuard = 0
       while (remainHours > 0 && loopGuard < 365) {
-        if (isWorkDay(curDay, workDays)) {
+        const equipName = bestEquip?.name
+        if (isWorkDay(curDay, workDays)
+            && isProcessAllowedOnDay(curDay, proc.name, rules)
+            && (!equipName || isEquipAllowedOnDay(curDay, equipName, rules))) {
           remainHours -= effectiveDayHours
           endDay = curDay.clone()
         }

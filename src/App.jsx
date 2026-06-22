@@ -17,6 +17,7 @@ import { DeliveryMgmt }      from './pages/delivery/DeliveryMgmt.jsx'
 import { Reports }           from './pages/report/Reports.jsx'
 import { AutoSchedule }      from './pages/schedule/AutoSchedule.jsx'
 import { UnregisteredProcess } from './pages/master/UnregisteredProcess.jsx'
+import { ScheduleRules }      from './pages/master/ScheduleRules.jsx'
 
 const { Sider, Content, Header } = Layout
 
@@ -63,7 +64,7 @@ const MENUS = [
     ['orderList','주문현황'],['orderInput','주문등록'],['deliveryCheck','납기검토'],
   ]},
   { id:'master', icon:<DatabaseOutlined />, name:'기준정보', sub:[
-    ['processRoute','공정라우팅'],['workerMaster','작업자 마스터'],['equipMaster','설비 마스터'],['unregistered','공정 미등록'],
+    ['processRoute','공정라우팅'],['workerMaster','작업자 마스터'],['equipMaster','설비 마스터'],['scheduleRules','스케줄 규칙'],['unregistered','공정 미등록'],
   ]},
   { id:'result', icon:<BarChartOutlined />, name:'생산실적', sub:[
     ['resultInput','실적 입력'],['resultProcess','공정 진도현황'],['resultSummary','일/월별 집계'],
@@ -163,7 +164,9 @@ function AppMain({ user, onLogout }) {
       case 'order':          return <OrderManagement sub={subKey} />
       case 'mps':       return <MasterPlan sub={subKey} />
       case 'process':   return <ProcessPlan sub={subKey} />
-      case 'master':    return subKey === 'unregistered' ? <UnregisteredProcess /> : <ProcessPlan sub={subKey} />
+      case 'master':    return subKey === 'unregistered' ? <UnregisteredProcess />
+                               : subKey === 'scheduleRules' ? <ScheduleRules />
+                               : <ProcessPlan sub={subKey} />
       case 'result':    return <ProductionResult sub={subKey} />
       case 'delivery':  return <DeliveryMgmt sub={subKey} />
       case 'report':    return <Reports sub={subKey} />
