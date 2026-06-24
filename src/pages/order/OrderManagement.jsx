@@ -745,51 +745,6 @@ function OrderInput() {
   )
 }
 
-// ─── 납기검토 ─────────────────────────────────────────────────────
-function DeliveryCheck() {
-  const items = [
-    { key:1, jobNo:'26T0515D04', productName:'구조체 브라켓 SET', dueDate:'2026-05-31', remain:2, plan:15, done:8,  risk:'critical', note:'설비 과부하, 야근 필요' },
-    { key:2, jobNo:'26T0512B02', productName:'HH-프레임 ASSY',    dueDate:'2026-05-31', remain:2, plan:8,  done:5,  risk:'high',     note:'자재 납기 지연 가능성' },
-    { key:3, jobNo:'26T0406R01', productName:'SILL SUPPORT',       dueDate:'2026-06-09', remain:11,plan:12, done:10, risk:'low',      note:'정상 진행' },
-  ]
-  const riskMap = { critical:['납기위험','error'], high:['주의','warning'], low:['정상','success'] }
-  const cols = [
-    { title:'제번', dataIndex:'jobNo', width:130, render:v=><Text strong style={{color:'#3B82F6',fontSize:12,fontFamily:'monospace'}}>{v}</Text> },
-    { title:'제품명', dataIndex:'productName', render:v=><Text strong>{v}</Text> },
-    { title:'납기일', dataIndex:'dueDate', width:110, render:(v,r)=>{
-      const d = calcDday(v)
-      return <Space direction="vertical" size={0}>
-        <Text style={{color:r.risk==='critical'?'#EF4444':'',fontWeight:r.risk!=='low'?700:''}}>{v}</Text>
-        <Text style={{fontSize:11,color:'#94A3B8'}}>D-{d}</Text>
-      </Space>
-    }},
-    { title:'잔여(일)', dataIndex:'remain', width:80, align:'center', render:v=><Text strong style={{color:v<=2?'#EF4444':'#0F172A'}}>{v}일</Text> },
-    { title:'계획(EA)', dataIndex:'plan', width:80, align:'center' },
-    { title:'완료(EA)', dataIndex:'done', width:80, align:'center', render:v=><Text strong style={{color:'#10B981'}}>{v}</Text> },
-    { title:'잔여(EA)', key:'left', width:80, align:'center', render:(_,r)=><Text strong style={{color:'#EF4444'}}>{r.plan-r.done}</Text> },
-    { title:'진행률', key:'pct', width:130, render:(_,r)=>{
-      const pct = Math.round(r.done/r.plan*100)
-      return <Space size={4}><Progress percent={pct} size="small" style={{width:80}} showInfo={false} strokeColor={pct===100?'#10B981':pct>60?'#3B82F6':'#F59E0B'} /><Text style={{fontSize:11}}>{pct}%</Text></Space>
-    }},
-    { title:'위험도', dataIndex:'risk', width:90, render:v=><Tag color={riskMap[v][1]}>{riskMap[v][0]}</Tag> },
-    { title:'비고', dataIndex:'note', render:v=><Text type="secondary" style={{fontSize:12}}>{v}</Text> },
-  ]
-  return (
-    <div>
-      <div style={{marginBottom:20}}>
-        <Title level={4} style={{margin:0}}>납기 검토</Title>
-        <Text type="secondary">납기 준수 가능 여부 분석 및 위험 주문 관리</Text>
-      </div>
-      <Alert type="warning" showIcon icon={<WarningOutlined />}
-        message="납기 D-7 이내 주문 2건이 있습니다. 납기위험 1건에 대한 즉시 조치가 필요합니다."
-        style={{marginBottom:16,borderRadius:10}} />
-      <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
-        <Table columns={cols} dataSource={items} pagination={false} size="small" bordered />
-      </Card>
-    </div>
-  )
-}
-
 // ─── Placeholder ──────────────────────────────────────────────────
 function PlaceholderPage({ title }) {
   return (
@@ -805,6 +760,5 @@ function PlaceholderPage({ title }) {
 export function OrderManagement({ sub }) {
   if (!sub || sub==='orderList')   return <OrderList />
   if (sub==='orderInput')          return <OrderInput />
-  if (sub==='deliveryCheck')       return <DeliveryCheck />
   return <PlaceholderPage title={sub} />
 }

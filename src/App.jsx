@@ -61,7 +61,7 @@ const MENUS = [
     ['weekPlan','주간 생산계획'],['dayPlan','일일 생산계획'],['workerPlan','작업자별 생산계획'],
   ]},
   { id:'order',   icon:<FileTextOutlined />, name:'주문관리', sub:[
-    ['orderList','주문현황'],['orderInput','주문등록'],['deliveryCheck','납기검토'],
+    ['orderList','주문현황'],['orderInput','주문등록'],
   ]},
   { id:'master', icon:<DatabaseOutlined />, name:'기준정보', sub:[
     ['processRoute','공정라우팅'],['workerMaster','작업자 마스터'],['equipMaster','설비 마스터'],['scheduleRules','스케줄 규칙'],['unregistered','공정 미등록'],
