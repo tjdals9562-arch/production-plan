@@ -16,6 +16,13 @@
 
 import dayjs from 'dayjs'
 
+// 주문PT#에서 * 이전 기본코드만 추출 (예: AEA32C578*BB → AEA32C578)
+// 크기/색상 등 변형 suffix가 달라도 공정(레이저→벤딩→...)과 소요시간은 동일하므로
+// 공정경로는 기본코드 하나로 공유하고, 수량/작업지시는 변형별 원래 코드를 그대로 유지한다.
+function baseCode(code) {
+  return (code || '').split('*')[0].trim().toUpperCase()
+}
+
 // 요일 문자 → dayjs 요일 번호 (0=일, 1=월, ... 6=토)
 const DAY_NUM = { '일':0,'월':1,'화':2,'수':3,'목':4,'금':5,'토':6 }
 const DAY_STR = ['일','월','화','수','목','금','토']
@@ -95,7 +102,7 @@ function getCapableEquips(processName, equips) {
 function calcSlack(order, routes, baseDate) {
   if (!order.dueDate) return 9999
   const daysLeft = dayjs(order.dueDate).diff(baseDate, 'day')
-  const route = routes.find(r => r.productCode?.toUpperCase() === order.productCode?.toUpperCase())
+  const route = routes.find(r => baseCode(r.productCode) === baseCode(order.productCode))
   if (!route?.processes?.length) return daysLeft
   const qty = Number(order.remainQty || order.orderQty || 1)
   const totalHours = route.processes.reduce((s, p) => s + (p.timePerEa||0) * qty + (p.setupTime||0), 0)
@@ -303,11 +310,11 @@ export function schedule(orders, routes, workers, equips, bomItems = [], startDa
     const qty = Number(order.remainQty || order.orderQty) || 1
     const productRoute = routes.find(r =>
       r.productCode && order.productCode &&
-      r.productCode.toUpperCase() === order.productCode.toUpperCase()
+      baseCode(r.productCode) === baseCode(order.productCode)
     )
     const orderBom = bomItems.filter(b =>
       b.productCode && order.productCode &&
-      b.productCode.toUpperCase() === order.productCode.toUpperCase()
+      baseCode(b.productCode) === baseCode(order.productCode)
     )
 
     if (!orderBom.length && (!productRoute || !productRoute.processes?.length)) {
@@ -339,7 +346,7 @@ export function schedule(orders, routes, workers, equips, bomItems = [], startDa
       for (const item of orderBom) {
         const partRoute = routes.find(r =>
           r.productCode && item.partCode &&
-          r.productCode.toUpperCase() === item.partCode.toUpperCase()
+          baseCode(r.productCode) === baseCode(item.partCode)
         )
         if (!partRoute || !partRoute.processes?.length) {
           tasks.push({
