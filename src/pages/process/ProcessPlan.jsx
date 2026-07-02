@@ -602,6 +602,7 @@ function RouteFormDrawer({ route, open, onClose, onSaved }) {
                       <AutoComplete
                         placeholder="공정명"
                         options={procOptions}
+                        popupMatchSelectWidth={220}
                         filterOption={(input, opt) => opt.value.toLowerCase().includes(input.toLowerCase())}
                         onSelect={(value, opt) => {
                           if (opt?.dept && DEPT_OPTIONS.includes(opt.dept)) {
