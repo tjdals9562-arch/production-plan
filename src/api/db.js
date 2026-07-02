@@ -59,11 +59,19 @@ function fromOrder(o, batchLabel) {
 }
 
 export async function fetchOrders(batchLabel) {
-  let q = supabase.from('orders').select('*').order('created_at', { ascending: false })
-  if (batchLabel) q = q.eq('batch_label', batchLabel)
-  const { data, error } = await q
-  if (error) throw error
-  return data.map(toOrder)
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  for (;;) {
+    let q = supabase.from('orders').select('*').order('created_at', { ascending: false }).range(from, from + PAGE - 1)
+    if (batchLabel) q = q.eq('batch_label', batchLabel)
+    const { data, error } = await q
+    if (error) throw error
+    all.push(...data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return all.map(toOrder)
 }
 
 export async function upsertOrders(orders, batchLabel) {
@@ -428,6 +436,69 @@ export async function deleteProcessById(id) {
   const { data, error } = await supabase.from('processes').delete().eq('id', parseInt(id)).select()
   if (error) throw error
   if (!data?.length) throw new Error('삭제 실패 — Supabase RLS 정책을 확인하세요')
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  WORK ORDERS (작업지시 발행 / 일정계획 Gantt 공용)
+// ═══════════════════════════════════════════════════════════════════
+
+function toWorkOrder(row) {
+  return {
+    key:      String(row.id),
+    wo:       row.wo_no       ?? '',
+    so:       row.so_no       ?? '',
+    product:  row.product     ?? '',
+    assignee: row.assignee    ?? '',
+    start:    row.start_date  ?? '',
+    end:      row.end_date    ?? '',
+    plan:     row.plan_qty    ?? 0,
+    done:     row.done_qty    ?? 0,
+    status:   row.status      ?? '대기',
+    steps:    Array.isArray(row.steps) ? row.steps : [],
+  }
+}
+
+function fromWorkOrder(o) {
+  return {
+    wo_no:      o.wo,
+    so_no:      o.so       || null,
+    product:    o.product,
+    assignee:   o.assignee || null,
+    start_date: nullDate(o.start),
+    end_date:   nullDate(o.end),
+    plan_qty:   parseInt(o.plan) || 0,
+    done_qty:   parseInt(o.done) || 0,
+    status:     o.status || '대기',
+    steps:      o.steps ?? [],
+  }
+}
+
+export async function fetchWorkOrders() {
+  const { data, error } = await supabase.from('work_orders').select('*').order('start_date').order('id')
+  if (error) throw error
+  return data.map(toWorkOrder)
+}
+
+export async function saveWorkOrder(order, isNew) {
+  const row = fromWorkOrder(order)
+  if (!isNew) {
+    const { error } = await supabase.from('work_orders').update(row).eq('id', parseInt(order.key))
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('work_orders').insert(row)
+    if (error) throw error
+  }
+}
+
+export async function deleteWorkOrderById(id) {
+  const { data, error } = await supabase.from('work_orders').delete().eq('id', parseInt(id)).select()
+  if (error) throw error
+  if (!data?.length) throw new Error('삭제 실패 — Supabase RLS 정책을 확인하세요')
+}
+
+export async function seedWorkOrders(orders) {
+  const { error } = await supabase.from('work_orders').insert(orders.map(fromWorkOrder))
+  if (error) throw error
 }
 
 // ═══════════════════════════════════════════════════════════════════
