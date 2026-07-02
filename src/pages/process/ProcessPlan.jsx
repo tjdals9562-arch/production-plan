@@ -553,7 +553,7 @@ function ProcessRouteMaster() {
 
 // ─── 작업자 마스터 ───────────────────────────────────────────────
 const DAYS_KR = ['월','화','수','목','금','토','일']
-const ALL_PROCESSES = ['레이저','NCT','샤링','밴드쏘','절곡','태핑','용접','도장','프레스','포장','랜딩도어조립','로프행거제작','랜딩도어포장','브라켓볼트포장','카도어포장','페시아포장','슈조립']
+const ALL_PROCESSES = ['레이저','NCT','샤링','밴드쏘','절곡','태핑','용접','도장','프레스','포장','운반','랜딩도어조립','로프행거제작','랜딩도어포장','브라켓볼트포장','카도어포장','페시아포장','슈조립']
 
 // ─── 공정마스터 초기 데이터 (금산산기 기준) ──────────────────────
 const INIT_PROCESSES = [
@@ -569,6 +569,7 @@ const INIT_PROCESSES = [
   { code:'M04', name:'도장',           dept:'제관반',   category:'도장', stdTime:30,  sortOrder:13, isActive:true,  note:'' },
   { code:'M05', name:'프레스',         dept:'제관반',   category:'성형', stdTime:15,  sortOrder:14, isActive:true,  note:'' },
   { code:'M06', name:'포장',           dept:'제관반',   category:'기타', stdTime:10,  sortOrder:15, isActive:true,  note:'' },
+  { code:'M07', name:'운반',           dept:'제관반',   category:'기타', stdTime:0,   sortOrder:16, isActive:true,  note:'' },
   // 조립반
   { code:'A01', name:'랜딩도어조립',   dept:'조립반',   category:'조립', stdTime:60,  sortOrder:20, isActive:true,  note:'' },
   { code:'A02', name:'로프행거제작',   dept:'조립반',   category:'조립', stdTime:40,  sortOrder:21, isActive:true,  note:'' },
@@ -577,6 +578,7 @@ const INIT_PROCESSES = [
   { code:'A05', name:'카도어포장',     dept:'조립반',   category:'기타', stdTime:20,  sortOrder:24, isActive:true,  note:'' },
   { code:'A06', name:'페시아포장',     dept:'조립반',   category:'기타', stdTime:0,   sortOrder:25, isActive:true,  note:'' },
   { code:'A07', name:'슈조립',         dept:'조립반',   category:'조립', stdTime:0,   sortOrder:26, isActive:true,  note:'' },
+  { code:'A08', name:'운반',           dept:'조립반',   category:'기타', stdTime:0,   sortOrder:27, isActive:true,  note:'' },
 ]
 const CATEGORIES = ['절단', '성형', '용접', '도장', '조립', '기타']
 const DEPT_OPTIONS = ['제관반', '조립반']
