@@ -578,7 +578,7 @@ const INIT_PROCESSES = [
   { code:'A06', name:'페시아포장',     dept:'조립반',   category:'기타', stdTime:0,   sortOrder:25, isActive:true,  note:'' },
 ]
 const CATEGORIES = ['절단', '성형', '용접', '도장', '조립', '기타']
-const DEPT_OPTIONS = ['레이저반', '제관반', '조립반']
+const DEPT_OPTIONS = ['제관반', '조립반']
 const DEPT_COLOR = { '레이저반': 'blue', '제관반': 'orange', '조립반': 'green' }
 
 const INIT_WORKERS = [
