@@ -611,7 +611,8 @@ function WorkerMaster() {
     fetchProcesses()
       .then(data => {
         const active = data.filter(p => p.isActive)
-        if (active.length) setProcOpts(active.map(p => ({label:p.name,value:p.name})))
+        const uniqueNames = [...new Set(active.map(p => p.name))]
+        if (uniqueNames.length) setProcOpts(uniqueNames.map(name => ({label:name,value:name})))
       })
       .catch(() => {})
   }, [])
@@ -829,7 +830,8 @@ function EquipMaster() {
     fetchProcesses()
       .then(data => {
         const active = data.filter(p => p.isActive)
-        if (active.length) setProcOpts(active.map(p => ({label:p.name,value:p.name})))
+        const uniqueNames = [...new Set(active.map(p => p.name))]
+        if (uniqueNames.length) setProcOpts(uniqueNames.map(name => ({label:name,value:name})))
       })
       .catch(() => {})
   }, [])
