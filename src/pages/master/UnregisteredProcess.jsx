@@ -95,7 +95,7 @@ function RouteDrawer({ order, open, onClose, onSaved }) {
         <Divider style={{ margin: '4px 0 12px' }}>공정 단계</Divider>
 
         <div style={{ display: 'flex', gap: 4, marginBottom: 6, padding: '0 4px' }}>
-          {['#', '공정명', '소요(h/EA)', '셋업(h)', '인원', '설비', ''].map((h, i) => (
+          {['#', '공정명', '소요(분/EA)', '셋업(분)', '인원', '설비', ''].map((h, i) => (
             <div key={i} style={{ flex: [0.4, 2, 1.2, 1.2, 0.8, 2, 0.5][i], fontSize: 11, fontWeight: 600, color: '#64748B' }}>{h}</div>
           ))}
         </div>
@@ -116,8 +116,8 @@ function RouteDrawer({ order, open, onClose, onSaved }) {
                       />
                     </Form.Item>
                   </div>
-                  <div style={{ flex: 1.2 }}><Form.Item name={[field.name, 'timePerEa']} noStyle><InputNumber min={0} step={0.1} style={{ width: '100%' }} placeholder="0" /></Form.Item></div>
-                  <div style={{ flex: 1.2 }}><Form.Item name={[field.name, 'setupTime']} noStyle><InputNumber min={0} step={0.1} style={{ width: '100%' }} placeholder="0" /></Form.Item></div>
+                  <div style={{ flex: 1.2 }}><Form.Item name={[field.name, 'timePerEa']} noStyle><InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="0" /></Form.Item></div>
+                  <div style={{ flex: 1.2 }}><Form.Item name={[field.name, 'setupTime']} noStyle><InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="0" /></Form.Item></div>
                   <div style={{ flex: 0.8 }}><Form.Item name={[field.name, 'workers']} noStyle><InputNumber min={1} style={{ width: '100%' }} placeholder="1" /></Form.Item></div>
                   <div style={{ flex: 2 }}><Form.Item name={[field.name, 'equip']} noStyle><Input placeholder="설비명" /></Form.Item></div>
                   <div style={{ flex: 0.5 }}>
