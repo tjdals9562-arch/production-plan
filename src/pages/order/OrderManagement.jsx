@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useEffect } from 'react'
+﻿import { useState, useCallback, useEffect, useMemo } from 'react'
 import {
   Table, Tag, Button, Space, Form, Input, Select, DatePicker, Row, Col, Card,
   Progress, Typography, Badge, Statistic, Divider, Alert, Modal, message, Tooltip,
@@ -424,20 +424,23 @@ function OrderList() {
     setOrders(rows.length ? rows : DUMMY_ORDERS)
   }
 
-  const filtered = orders.filter(o => {
+  const filtered = useMemo(() => orders.filter(o => {
     const q = searchText.toLowerCase()
     const matchSearch = !q || [o.jobNo,o.productCode,o.productName,o.customer].some(v => v?.toLowerCase().includes(q))
     const matchStatus = !statusFilter || o.status === statusFilter
     return matchSearch && matchStatus
-  })
+  }), [orders, searchText, statusFilter])
 
-  const summary = {
-    total: orders.length,
-    done:  orders.filter(o=>o.status==='완료').length,
-    going: orders.filter(o=>o.status==='진행').length,
-    risk:  orders.filter(o=>o.status==='위험').length,
-    new_:  orders.filter(o=>o.status==='신규').length,
-  }
+  const summary = useMemo(() => {
+    const s = { total: orders.length, done: 0, going: 0, risk: 0, new_: 0 }
+    for (const o of orders) {
+      if (o.status === '완료') s.done++
+      else if (o.status === '진행') s.going++
+      else if (o.status === '위험') s.risk++
+      else if (o.status === '신규') s.new_++
+    }
+    return s
+  }, [orders])
 
   const C = { fontSize:13, fontWeight:400, color:'#0F172A' }  // 셀 공통 스타일
 
@@ -613,7 +616,8 @@ function OrderList() {
             pagination={false}
             bordered
             size="small"
-            scroll={{x:1150}}
+            virtual
+            scroll={{x:1150, y:560}}
             rowClassName={r=>r.status==='위험'?'row-risk':''}
             locale={{emptyText:<Empty description="주문 데이터가 없습니다. ERP 엑셀을 업로드하세요." />}}
           />

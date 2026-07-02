@@ -4,7 +4,7 @@
  * 유한능력 자동 스케줄을 생성하고 Gantt / 작업자 일일계획으로 시각화
  */
 
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
   Card, Row, Col, Button, Space, Select, Tag, Typography, Badge, Progress,
   Table, Tooltip, Alert, Statistic, Tabs, Steps, Divider, Empty, Switch,
@@ -202,6 +202,36 @@ function GanttView({ ganttData, tasks, workers, startDate, endDate, onTaskUpdate
     ? Math.max(0, Math.min((rows?.length||1) - 1, dragInfo.ri + Math.round(dragInfo.dy / ROW_H)))
     : -1
 
+  // 행이 많을 때(주문 다수) 보이는 범위만 렌더링 — 가상 스크롤
+  const rowsWrapRef = useRef(null)
+  const [rowScrollTop, setRowScrollTop] = useState(0)
+  const [rowViewH, setRowViewH] = useState(600)
+  const rafRef = useRef(null)
+
+  useEffect(() => {
+    const el = rowsWrapRef.current
+    if (!el) return
+    const upd = () => setRowViewH(el.clientHeight)
+    upd()
+    const ro = new ResizeObserver(upd)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const handleRowScroll = useCallback(e => {
+    const top = e.currentTarget.scrollTop
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(() => { rafRef.current = null; setRowScrollTop(top) })
+  }, [])
+
+  const ROW_BUFFER = 6
+  const totalRowCount = rows?.length || 0
+  const rowStartIdx = Math.max(0, Math.floor(rowScrollTop / ROW_H) - ROW_BUFFER)
+  const rowEndIdx = Math.min(totalRowCount, Math.ceil((rowScrollTop + rowViewH) / ROW_H) + ROW_BUFFER)
+  const rowPadTop = rowStartIdx * ROW_H
+  const rowPadBottom = Math.max(0, (totalRowCount - rowEndIdx) * ROW_H)
+  const visibleRows = (rows || []).slice(rowStartIdx, rowEndIdx)
+
   return (
     <div>
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12,flexWrap:'wrap'}}>
@@ -245,8 +275,11 @@ function GanttView({ ganttData, tasks, workers, startDate, endDate, onTaskUpdate
           </div>
         </div>
 
-        {/* Gantt 행 */}
-        {rows?.map((row, ri) => {
+        {/* Gantt 행 — 보이는 범위만 렌더링 */}
+        <div ref={rowsWrapRef} onScroll={handleRowScroll} style={{maxHeight:600, overflowY:'auto'}}>
+        {rowPadTop > 0 && <div style={{height:rowPadTop}} />}
+        {visibleRows.map((row, localI) => {
+          const ri = rowStartIdx + localI
           const isDropTarget = ri === targetRi && ri !== dragInfo?.ri
           return (
             <div key={row.key || row.jobNo || ri} style={{
@@ -357,6 +390,8 @@ function GanttView({ ganttData, tasks, workers, startDate, endDate, onTaskUpdate
             </div>
           )
         })}
+        {rowPadBottom > 0 && <div style={{height:rowPadBottom}} />}
+        </div>
 
         {/* 범례 */}
         <div style={{marginTop:16,display:'flex',gap:12,flexWrap:'wrap',padding:'8px 0',borderTop:'1px solid #F1F5F9'}}>
@@ -434,6 +469,7 @@ function WorkerPlanView({ workerPlan, dateRange }) {
 
 // ─── 작업지시 목록 뷰 ────────────────────────────────────────────
 function TaskListView({ tasks }) {
+  const dataSource = useMemo(() => tasks.map((t,i)=>({...t,key:i})), [tasks])
   const cols = [
     { title:'제번', dataIndex:'jobNo', width:120, fixed:'left', render:v=><Text strong style={{color:'#3B82F6',fontSize:12,fontFamily:'monospace'}}>{v}</Text> },
     { title:'제품명', dataIndex:'productName', width:160, ellipsis:true, render:v=><Text>{v}</Text> },
@@ -466,9 +502,11 @@ function TaskListView({ tasks }) {
   ]
 
   return (
-    <Table columns={cols} dataSource={tasks.map((t,i)=>({...t,key:i}))}
+    <Table columns={cols} dataSource={dataSource}
       pagination={false} size="small"
       bordered
+      virtual
+      scroll={{y:560}}
       style={{fontSize:12}}
       rowClassName={() => 'compact-row'}
     />
