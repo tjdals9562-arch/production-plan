@@ -553,12 +553,15 @@ function ProcessRouteMaster() {
 
 // ─── 작업자 마스터 ───────────────────────────────────────────────
 const DAYS_KR = ['월','화','수','목','금','토','일']
-const ALL_PROCESSES = ['레이저','절곡','태핑','용접','도장','프레스','포장','랜딩도어조립','로프행거제작','랜딩도어포장','브라켓볼트포장','카도어포장']
+const ALL_PROCESSES = ['레이저','NCT','샤링','밴드쏘','절곡','태핑','용접','도장','프레스','포장','랜딩도어조립','로프행거제작','랜딩도어포장','브라켓볼트포장','카도어포장']
 
 // ─── 공정마스터 초기 데이터 (금산산기 기준) ──────────────────────
 const INIT_PROCESSES = [
-  // 레이저반 (1차 범위 제외)
-  { code:'L01', name:'레이저',         dept:'레이저반', category:'절단', stdTime:30,  sortOrder:1,  isActive:false, note:'1차 범위 제외' },
+  // 레이저반
+  { code:'L01', name:'레이저',         dept:'레이저반', category:'절단', stdTime:30,  sortOrder:1,  isActive:true,  note:'' },
+  { code:'L02', name:'NCT',            dept:'레이저반', category:'절단', stdTime:0,   sortOrder:2,  isActive:true,  note:'' },
+  { code:'L03', name:'샤링',           dept:'레이저반', category:'절단', stdTime:0,   sortOrder:3,  isActive:true,  note:'' },
+  { code:'L04', name:'밴드쏘',         dept:'레이저반', category:'절단', stdTime:0,   sortOrder:4,  isActive:true,  note:'' },
   // 제관반
   { code:'M01', name:'절곡',           dept:'제관반',   category:'성형', stdTime:20,  sortOrder:10, isActive:true,  note:'' },
   { code:'M02', name:'태핑',           dept:'제관반',   category:'기타', stdTime:10,  sortOrder:11, isActive:true,  note:'' },
