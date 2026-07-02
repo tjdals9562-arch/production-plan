@@ -18,7 +18,7 @@ import {
 import dayjs from 'dayjs'
 import { schedule, buildWorkerDailyPlan, buildGanttData } from '../../utils/scheduler.js'
 import { loadScheduleRules } from '../master/ScheduleRules.jsx'
-import { fetchOrders, fetchProcessRoutes, fetchWorkers, fetchEquipment,
+import { fetchOrders, fetchProcessRoutes, fetchWorkers, fetchEquipment, fetchBom,
   saveSchedule, fetchSchedules, fetchScheduleById, deleteSchedule } from '../../api/db.js'
 import { SaveOutlined, HistoryOutlined } from '@ant-design/icons'
 
@@ -113,7 +113,7 @@ function GanttView({ ganttData, tasks, workers, startDate, endDate, onTaskUpdate
       const wn = t.assignedWorkerName || '미배정'
       if (!map[wn]) map[wn] = { key:wn, workerName:wn, primary:null, bars:[] }
       map[wn].bars.push({
-        taskIdx:idx, jobNo:t.jobNo, productName:t.productName,
+        taskIdx:idx, jobNo:t.jobNo, productName:t.productName, partName:t.partName || null,
         label:t.processName, startDate:t.startDate, endDate:t.endDate,
         status:t.status, warning:t.warning, equip:t.assignedEquip, worker:t.assignedWorkerName,
       })
@@ -343,7 +343,7 @@ function GanttView({ ganttData, tasks, workers, startDate, endDate, onTaskUpdate
                       )}
                       <Tooltip title={isDrag ? '' : (
                         <div>
-                          <div><strong>{viewMode==='worker' ? `${bar.jobNo} — ${bar.label}` : bar.label}</strong></div>
+                          <div><strong>{viewMode==='worker' ? `${bar.jobNo} — ${bar.label}` : bar.label}</strong>{bar.partName && <span style={{marginLeft:6,opacity:0.8}}>({bar.partName})</span>}</div>
                           <div>{bar.startDate} ~ {bar.endDate}</div>
                           <div>작업자: {bar.worker || '미배정'}</div>
                           <div>설비: {bar.equip || '—'}</div>
@@ -473,6 +473,8 @@ function TaskListView({ tasks }) {
   const cols = [
     { title:'제번', dataIndex:'jobNo', width:120, fixed:'left', render:v=><Text strong style={{color:'#3B82F6',fontSize:12,fontFamily:'monospace'}}>{v}</Text> },
     { title:'제품명', dataIndex:'productName', width:160, ellipsis:true, render:v=><Text>{v}</Text> },
+    { title:'부품', dataIndex:'partName', width:110, ellipsis:true,
+      render:v=>v ? <Tag color="purple" style={{fontSize:11}}>{v}</Tag> : <Text type="secondary">완제품</Text> },
     { title:'공정', dataIndex:'processName', render:v=><Tag style={{background:pc(v)+'20',color:pc(v),border:`1px solid ${pc(v)}55`,fontWeight:600,fontSize:11}}>{v}</Tag> },
     { title:'수량', dataIndex:'qty', width:50, align:'center' },
     { title:'시작일', dataIndex:'startDate', width:100 },
@@ -538,6 +540,7 @@ export function AutoSchedule() {
   const [routes, setRoutes] = useState(SAMPLE_ROUTES)
   const [workers, setWorkers] = useState(SAMPLE_WORKERS)
   const [equips, setEquips] = useState(SAMPLE_EQUIPS)
+  const [bomItems, setBomItems] = useState([])
   const [usingRealData, setUsingRealData] = useState(false)
 
   const ganttData = useMemo(() => tasks ? buildGanttData(tasks) : null, [tasks])
@@ -549,12 +552,14 @@ export function AutoSchedule() {
       fetchProcessRoutes().catch(() => []),
       fetchWorkers().catch(() => []),
       fetchEquipment().catch(() => []),
-    ]).then(([ords, rts, wkrs, eqs]) => {
+      fetchBom().catch(() => []),
+    ]).then(([ords, rts, wkrs, eqs, bom]) => {
       let real = false
       if (ords.length)  { setOrders(ords.filter(o => (o.remainQty || o.orderQty || 0) > 0)); real = true }
       if (rts.length)   { setRoutes(rts);   real = true }
       if (wkrs.length)  { setWorkers(wkrs); real = true }
       if (eqs.length)   { setEquips(eqs);   real = true }
+      setBomItems(bom)
       setUsingRealData(real)
     }).finally(() => setDataLoading(false))
   }, [])
@@ -604,7 +609,7 @@ export function AutoSchedule() {
     try {
       const startDate = new Date(startDateStr)
       const activeRules = await loadScheduleRules()
-      const result = schedule(orders, routes, workers, equips, startDate, { priorityRule, rules: activeRules })
+      const result = schedule(orders, routes, workers, equips, bomItems, startDate, { priorityRule, rules: activeRules })
       setTasks(result)
       setModifiedCount(0)
       const ruleCount = activeRules.length

@@ -335,6 +335,51 @@ export async function seedProcessRoutes(routes) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  BOM (완제품 → 부품 구성, 단일 레벨)
+// ═══════════════════════════════════════════════════════════════════
+
+function toBomItem(b) {
+  return {
+    key:         String(b.id),
+    productCode: b.product_code ?? '',
+    productName: b.product_name ?? '',
+    partCode:    b.part_code    ?? '',
+    partName:    b.part_name    ?? '',
+    qtyPer:      b.qty_per      ?? 1,
+    unit:        b.unit         ?? 'EA',
+    note:        b.note         ?? '',
+  }
+}
+
+export async function fetchBom() {
+  const { data, error } = await supabase.from('bom_items').select('*').order('id')
+  if (error) throw error
+  return data.map(toBomItem)
+}
+
+export async function upsertBomItems(productCode, productName, items) {
+  await supabase.from('bom_items').delete().eq('product_code', productCode)
+  if (items?.length > 0) {
+    const rows = items.map(it => ({
+      product_code: productCode,
+      product_name: productName || null,
+      part_code:    it.partCode,
+      part_name:    it.partName || null,
+      qty_per:      it.qtyPer ?? 1,
+      unit:         it.unit || 'EA',
+      note:         it.note ?? '',
+    }))
+    const { error } = await supabase.from('bom_items').insert(rows)
+    if (error) throw error
+  }
+}
+
+export async function deleteBomByProductCode(productCode) {
+  const { error } = await supabase.from('bom_items').delete().eq('product_code', productCode)
+  if (error) throw error
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  PROCESSES (공정마스터)
 // ═══════════════════════════════════════════════════════════════════
 

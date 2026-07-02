@@ -7,6 +7,7 @@ import {
   fetchEquipment, saveEquipment, deleteEquipmentById, seedEquipment,
   fetchProcessRoutes, upsertProcessRoute, deleteProcessRouteById, seedProcessRoutes,
   fetchProcesses, saveProcess, deleteProcessById, seedProcesses,
+  fetchBom, upsertBomItems, deleteBomByProductCode,
 } from '../../api/db.js'
 import { PlusOutlined, PrinterOutlined, DownloadOutlined, SettingOutlined,
   InboxOutlined, FileExcelOutlined, CheckCircleOutlined, EditOutlined, DeleteOutlined,
@@ -17,6 +18,7 @@ import {
   downloadWorkerTemplate, parseWorkerExcel,
   downloadEquipTemplate, parseEquipExcel,
   downloadRouteTemplate,
+  downloadBomTemplate,
 } from '../../utils/excelTemplates.js'
 
 const { Title, Text } = Typography
@@ -190,24 +192,24 @@ const procColor = () => '#3B82F6'
 const INIT_ROUTES = [
   { key:'r1', productCode:'4UF0062*A', productName:'SILL SUPPORT', spec:'T4.5*60*109 W',
     processes:[
-      { seq:1, name:'레이저', dept:'제관반', timePerEa:0.5, setupTime:0.5, workers:1, equip:'파이버 레이저 #1' },
-      { seq:2, name:'벤딩',   dept:'제관반', timePerEa:0.3, setupTime:0.3, workers:1, equip:'CNC 벤딩 #1' },
-      { seq:3, name:'탭핑',   dept:'제관반', timePerEa:0.2, setupTime:0.2, workers:1, equip:'탭핑 머신' },
-      { seq:4, name:'포장',   dept:'제관반', timePerEa:0.1, setupTime:0.0, workers:1, equip:'—' },
+      { seq:1, name:'레이저', dept:'제관반', timePerEa:30, setupTime:30, workers:1, equip:'파이버 레이저 #1' },
+      { seq:2, name:'벤딩',   dept:'제관반', timePerEa:18, setupTime:18, workers:1, equip:'CNC 벤딩 #1' },
+      { seq:3, name:'탭핑',   dept:'제관반', timePerEa:12, setupTime:12, workers:1, equip:'탭핑 머신' },
+      { seq:4, name:'포장',   dept:'제관반', timePerEa:6,  setupTime:0,  workers:1, equip:'—' },
     ]},
   { key:'r2', productCode:'3HH-001B', productName:'HH-프레임 ASSY', spec:'T3.2 SS400',
     processes:[
-      { seq:1, name:'레이저', dept:'제관반', timePerEa:0.8, setupTime:0.5, workers:1, equip:'파이버 레이저 #2' },
-      { seq:2, name:'용접',   dept:'제관반', timePerEa:1.5, setupTime:0.5, workers:2, equip:'CO2 용접 #1' },
-      { seq:3, name:'도장',   dept:'제관반', timePerEa:0.5, setupTime:1.0, workers:1, equip:'도장 부스 #1' },
-      { seq:4, name:'조립',   dept:'조립반', timePerEa:0.8, setupTime:0.3, workers:2, equip:'조립 라인' },
+      { seq:1, name:'레이저', dept:'제관반', timePerEa:48, setupTime:30, workers:1, equip:'파이버 레이저 #2' },
+      { seq:2, name:'용접',   dept:'제관반', timePerEa:90, setupTime:30, workers:2, equip:'CO2 용접 #1' },
+      { seq:3, name:'도장',   dept:'제관반', timePerEa:30, setupTime:60, workers:1, equip:'도장 부스 #1' },
+      { seq:4, name:'조립',   dept:'조립반', timePerEa:48, setupTime:18, workers:2, equip:'조립 라인' },
     ]},
   { key:'r3', productCode:'BKT-SET', productName:'구조체 브라켓 SET', spec:'T4.5 SS400',
     processes:[
-      { seq:1, name:'레이저', dept:'제관반', timePerEa:0.6, setupTime:0.5, workers:1, equip:'파이버 레이저 #1' },
-      { seq:2, name:'프레스', dept:'제관반', timePerEa:0.4, setupTime:0.5, workers:1, equip:'CNC 벤딩 #2' },
-      { seq:3, name:'용접',   dept:'제관반', timePerEa:2.0, setupTime:0.5, workers:2, equip:'CO2 용접 #2' },
-      { seq:4, name:'조립',   dept:'조립반', timePerEa:1.0, setupTime:0.3, workers:2, equip:'조립 라인' },
+      { seq:1, name:'레이저', dept:'제관반', timePerEa:36,  setupTime:30, workers:1, equip:'파이버 레이저 #1' },
+      { seq:2, name:'프레스', dept:'제관반', timePerEa:24,  setupTime:30, workers:1, equip:'CNC 벤딩 #2' },
+      { seq:3, name:'용접',   dept:'제관반', timePerEa:120, setupTime:30, workers:2, equip:'CO2 용접 #2' },
+      { seq:4, name:'조립',   dept:'조립반', timePerEa:60,  setupTime:18, workers:2, equip:'조립 라인' },
     ]},
 ]
 
@@ -219,8 +221,8 @@ const ROUTE_COL_MAP = {
   '공정순서':'seq',          '순서':'seq', 'Seq':'seq',
   '공정명':'name',           '공정':'name', 'Process':'name',
   '작업구분':'dept',         '소속반':'dept', '반':'dept', 'Dept':'dept',
-  '소요시간':'timePerEa',    'EA당시간(h)':'timePerEa', 'Time/EA':'timePerEa', '시간/EA':'timePerEa',
-  '셋업시간':'setupTime',    'Setup(h)':'setupTime', '준비시간':'setupTime',
+  '소요시간':'timePerEa',    'EA당시간(분)':'timePerEa', 'Time/EA':'timePerEa', '분/EA':'timePerEa', 'EA당시간(h)':'timePerEa', '시간/EA':'timePerEa',
+  '셋업시간':'setupTime',    'Setup(분)':'setupTime', '준비시간':'setupTime', 'Setup(h)':'setupTime',
   '필요인원':'workers',      '인원':'workers', 'Workers':'workers',
   '사용설비':'equip',        '설비':'equip', 'Equipment':'equip',
 }
@@ -284,8 +286,8 @@ function ProcessFlow({ processes }) {
           <Tooltip title={
             <div>
               <div><strong>{p.name}</strong>{p.dept && <span style={{marginLeft:6,opacity:0.7}}>({p.dept})</span>}</div>
-              <div>소요: {p.timePerEa}h/EA</div>
-              <div>셋업: {p.setupTime}h</div>
+              <div>소요: {p.timePerEa}분/EA</div>
+              <div>셋업: {p.setupTime}분</div>
               <div>인원: {p.workers}명</div>
               <div>설비: {p.equip}</div>
             </div>
@@ -370,7 +372,7 @@ function RouteFormDrawer({ route, open, onClose, onSaved }) {
         <Divider style={{margin:'4px 0 12px'}}>공정 단계</Divider>
 
         <div style={{display:'flex',gap:4,marginBottom:6,padding:'0 4px'}}>
-          {['#','공정명','작업구분','소요(h/EA)','셋업(h)','인원','설비',''].map((h,i)=>(
+          {['#','공정명','작업구분','소요(분/EA)','셋업(분)','인원','설비',''].map((h,i)=>(
             <div key={i} style={{flex:[0.4,1.8,1.2,1,1,0.7,1.6,0.5][i],fontSize:11,fontWeight:600,color:'#64748B'}}>{h}</div>
           ))}
         </div>
@@ -383,8 +385,8 @@ function RouteFormDrawer({ route, open, onClose, onSaved }) {
                   <div style={{flex:0.4,textAlign:'center',color:'#94A3B8',fontSize:12}}>{idx+1}</div>
                   <div style={{flex:1.8}}><Form.Item name={[field.name,'name']} noStyle rules={[{required:true,message:''}]}><Input placeholder="공정명" /></Form.Item></div>
                   <div style={{flex:1.2}}><Form.Item name={[field.name,'dept']} noStyle><Select placeholder="작업구분" allowClear options={DEPT_OPTIONS.map(d=>({label:d,value:d}))} /></Form.Item></div>
-                  <div style={{flex:1}}><Form.Item name={[field.name,'timePerEa']} noStyle><InputNumber min={0} step={0.1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
-                  <div style={{flex:1}}><Form.Item name={[field.name,'setupTime']} noStyle><InputNumber min={0} step={0.1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
+                  <div style={{flex:1}}><Form.Item name={[field.name,'timePerEa']} noStyle><InputNumber min={0} step={1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
+                  <div style={{flex:1}}><Form.Item name={[field.name,'setupTime']} noStyle><InputNumber min={0} step={1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
                   <div style={{flex:0.7}}><Form.Item name={[field.name,'workers']} noStyle><InputNumber min={1} style={{width:'100%'}} placeholder="1" /></Form.Item></div>
                   <div style={{flex:1.6}}><Form.Item name={[field.name,'equip']} noStyle><Input placeholder="설비명" /></Form.Item></div>
                   <div style={{flex:0.5}}>
@@ -462,7 +464,7 @@ function ProcessRouteMaster() {
     { title:'소요시간/EA', key:'time', width:110, align:'center',
       render:(_,r)=>{
         const t = r.processes.reduce((s,p)=>s+p.timePerEa,0)
-        return <Text strong style={{color:'#7C3AED'}}>{t.toFixed(1)}h</Text>
+        return <Text strong style={{color:'#7C3AED'}}>{t.toFixed(0)}분</Text>
       }},
     { title:'액션', key:'act', width:100, fixed:'right',
       render:(_,r)=>(
@@ -497,7 +499,7 @@ function ProcessRouteMaster() {
               <div>제품코드 / 주문PT#</div>
               <div>품명, 규격, 공정순서</div>
               <div>공정명, 작업구분 (제관반/조립반)</div>
-              <div>소요시간 (h/EA), 셋업시간 (h)</div>
+              <div>소요시간 (분/EA), 셋업시간 (분)</div>
               <div>필요인원, 사용설비</div>
             </div>
           }>
@@ -547,6 +549,302 @@ function ProcessRouteMaster() {
       </Card>
 
       <RouteFormDrawer route={formRoute} open={formOpen} onClose={()=>setFormOpen(false)} onSaved={loadRoutes} />
+    </div>
+  )
+}
+
+// ─── BOM (완제품 → 부품 구성, 단일 레벨) ────────────────────────────
+const INIT_BOM = [
+  { productCode:'AEA05B170', productName:'A타입 도어 ASSY', partCode:'RP-0170-A', partName:'로프부품', qtyPer:1, unit:'EA', note:'' },
+  { productCode:'AEA05B170', productName:'A타입 도어 ASSY', partCode:'HG-0170-A', partName:'행거부품', qtyPer:1, unit:'EA', note:'' },
+]
+
+function groupBom(items) {
+  const map = {}
+  items.forEach(it => {
+    if (!map[it.productCode]) map[it.productCode] = { productCode: it.productCode, productName: it.productName, items: [] }
+    map[it.productCode].items.push({ partCode: it.partCode, partName: it.partName, qtyPer: it.qtyPer, unit: it.unit })
+  })
+  return Object.values(map)
+}
+
+const BOM_COL_MAP = {
+  '완제품코드':'productCode', '제품코드':'productCode', '주문PT#':'productCode', 'ProductCode':'productCode',
+  '완제품명':'productName', '품명':'productName', 'ProductName':'productName',
+  '부품도번':'partCode', '도번':'partCode', 'PartCode':'partCode',
+  '부품명':'partName', 'PartName':'partName',
+  '수량':'qtyPer', 'Qty':'qtyPer',
+  '단위':'unit', 'Unit':'unit',
+}
+
+function parseBomExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+        if (raw.length < 2) { reject(new Error('데이터 없음')); return }
+
+        let hIdx = 0
+        for (let i = 0; i < Math.min(5, raw.length); i++) {
+          if (raw[i].some(c => Object.keys(BOM_COL_MAP).includes(String(c).trim()))) { hIdx = i; break }
+        }
+        const headers = raw[hIdx].map(h => String(h).trim())
+        const rows = raw.slice(hIdx + 1).filter(r => r.some(c => c !== ''))
+
+        const result = rows.map(row => {
+          const obj = {}
+          headers.forEach((h, i) => { const f = BOM_COL_MAP[h]; if (f) obj[f] = row[i] ?? '' })
+          return {
+            productCode: String(obj.productCode || '').trim(),
+            productName: String(obj.productName || '').trim(),
+            partCode:    String(obj.partCode || '').trim(),
+            partName:    String(obj.partName || '').trim(),
+            qtyPer:      parseFloat(obj.qtyPer) || 1,
+            unit:        String(obj.unit || 'EA').trim(),
+          }
+        }).filter(b => b.productCode && b.partCode)
+
+        resolve(result)
+      } catch (err) { reject(err) }
+    }
+    reader.onerror = reject
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+function BomFormDrawer({ group, open, onClose, onSaved }) {
+  const [form] = Form.useForm()
+  const [saving, setSaving] = useState(false)
+  const isNew = !group
+
+  useEffect(() => {
+    if (!open) return
+    if (group) {
+      form.setFieldsValue({
+        productCode: group.productCode,
+        productName: group.productName,
+        items:       group.items.map(it => ({ ...it })),
+      })
+    } else {
+      form.resetFields()
+      form.setFieldsValue({ items: [{ partCode:'', partName:'', qtyPer:1, unit:'EA' }] })
+    }
+  }, [open, group])
+
+  const handleSave = async () => {
+    try {
+      const vals = await form.validateFields()
+      setSaving(true)
+      await upsertBomItems(vals.productCode, vals.productName, vals.items || [])
+      message.success(isNew ? '등록 완료' : '수정 완료')
+      onSaved()
+      onClose()
+    } catch(e) {
+      if (e?.errorFields) return
+      message.error('저장 실패: ' + e.message)
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Drawer
+      title={
+        <Space>
+          <SettingOutlined style={{color:'#3B82F6'}} />
+          <Text strong>{isNew ? 'BOM 신규 등록' : `${group?.productCode} 수정`}</Text>
+        </Space>
+      }
+      open={open} onClose={onClose} width={640}
+      footer={
+        <Space style={{justifyContent:'flex-end',width:'100%'}}>
+          <Button onClick={onClose}>취소</Button>
+          <Button type="primary" loading={saving} onClick={handleSave}
+            style={{background:'#10B981',borderColor:'#10B981'}}>저장</Button>
+        </Space>
+      }
+    >
+      <Form form={form} layout="vertical" size="small">
+        <Row gutter={12}>
+          <Col span={10}><Form.Item label="완제품코드" name="productCode" rules={[{required:true,message:'필수'}]}><Input disabled={!isNew} /></Form.Item></Col>
+          <Col span={14}><Form.Item label="완제품명" name="productName"><Input /></Form.Item></Col>
+        </Row>
+
+        <Divider style={{margin:'4px 0 12px'}}>부품 구성</Divider>
+
+        <div style={{display:'flex',gap:4,marginBottom:6,padding:'0 4px'}}>
+          {['#','부품도번','부품명','수량','단위',''].map((h,i)=>(
+            <div key={i} style={{flex:[0.4,1.6,1.8,0.8,0.8,0.5][i],fontSize:11,fontWeight:600,color:'#64748B'}}>{h}</div>
+          ))}
+        </div>
+
+        <Form.List name="items">
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map((field, idx) => (
+                <div key={field.key} style={{display:'flex',gap:4,marginBottom:6,alignItems:'center'}}>
+                  <div style={{flex:0.4,textAlign:'center',color:'#94A3B8',fontSize:12}}>{idx+1}</div>
+                  <div style={{flex:1.6}}><Form.Item name={[field.name,'partCode']} noStyle rules={[{required:true,message:''}]}><Input placeholder="부품도번" /></Form.Item></div>
+                  <div style={{flex:1.8}}><Form.Item name={[field.name,'partName']} noStyle><Input placeholder="부품명" /></Form.Item></div>
+                  <div style={{flex:0.8}}><Form.Item name={[field.name,'qtyPer']} noStyle><InputNumber min={0} step={1} style={{width:'100%'}} placeholder="1" /></Form.Item></div>
+                  <div style={{flex:0.8}}><Form.Item name={[field.name,'unit']} noStyle><Input placeholder="EA" /></Form.Item></div>
+                  <div style={{flex:0.5}}>
+                    <Button size="small" danger type="text" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                  </div>
+                </div>
+              ))}
+              <Button type="dashed" block icon={<PlusOutlined />} style={{marginTop:4}}
+                onClick={() => add({ partCode:'', partName:'', qtyPer:1, unit:'EA' })}>
+                부품 추가
+              </Button>
+            </>
+          )}
+        </Form.List>
+      </Form>
+    </Drawer>
+  )
+}
+
+function BomMaster() {
+  const [bomItems, setBomItems] = useState([])
+  const [dbLoading, setDbLoading] = useState(true)
+  const [parsing, setParsing] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [formGroup, setFormGroup] = useState(null)
+  const [formOpen, setFormOpen] = useState(false)
+  const [importLog, setImportLog] = useState([])
+
+  const loadBom = async () => {
+    setDbLoading(true)
+    try {
+      const data = await fetchBom()
+      if (data.length) { setBomItems(data) }
+      else {
+        for (const g of groupBom(INIT_BOM)) { await upsertBomItems(g.productCode, g.productName, g.items) }
+        setBomItems(await fetchBom())
+      }
+    } catch { message.error('BOM 데이터 로드 실패'); setBomItems(INIT_BOM) }
+    finally { setDbLoading(false) }
+  }
+
+  useEffect(() => { loadBom() }, [])
+
+  const handleFile = useCallback(async file => {
+    if (!/\.(xlsx?|xls)$/i.test(file.name)) { message.error('xlsx/xls 파일만 가능합니다'); return false }
+    setParsing(true)
+    try {
+      const rows = await parseBomExcel(file)
+      if (rows.length === 0) { message.warning('BOM 데이터를 찾을 수 없습니다. 컬럼명을 확인하세요.'); return false }
+      const groups = groupBom(rows)
+      for (const g of groups) { await upsertBomItems(g.productCode, g.productName, g.items) }
+      message.success(`완제품 ${groups.length}건, 부품 ${rows.length}건 반영`)
+      setImportLog(l => [{ filename:file.name, count:rows.length, at:new Date().toLocaleTimeString() }, ...l.slice(0,4)])
+      await loadBom()
+    } catch(e) { message.error(`파싱 오류: ${e.message}`) }
+    finally { setParsing(false) }
+    return false
+  }, [])
+
+  const groups = useMemo(() => {
+    const gs = groupBom(bomItems)
+    const q = searchText.toLowerCase()
+    return gs.filter(g => !q || [g.productCode, g.productName].some(v => v?.toLowerCase().includes(q)))
+  }, [bomItems, searchText])
+
+  const cols = [
+    { title:'완제품코드', dataIndex:'productCode', width:150, fixed:'left',
+      render:v=><Text strong style={{color:'#3B82F6',fontSize:12,fontFamily:'monospace'}}>{v}</Text> },
+    { title:'완제품명', dataIndex:'productName', width:180, ellipsis:true, render:v=><Text strong>{v}</Text> },
+    { title:'부품 구성', key:'items', render:(_,r)=>(
+      <Space size={4} wrap>
+        {r.items.map((it,i)=>(
+          <Tag key={i} color="purple" style={{fontSize:11}}>{it.partName || it.partCode} ({it.qtyPer}{it.unit})</Tag>
+        ))}
+      </Space>
+    )},
+    { title:'부품 수', key:'cnt', width:70, align:'center',
+      render:(_,r)=><Tag color="blue">{r.items.length}개</Tag> },
+    { title:'액션', key:'act', width:100, fixed:'right',
+      render:(_,r)=>(
+        <Space size={4}>
+          <Button size="small" icon={<EditOutlined />}
+            onClick={()=>{ setFormGroup(r); setFormOpen(true) }}>상세</Button>
+          <Popconfirm title="이 완제품의 BOM을 삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
+            onConfirm={async()=>{ try { await deleteBomByProductCode(r.productCode); await loadBom() } catch { message.error('삭제 실패') } }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      )},
+  ]
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <Title level={4} style={{margin:0}}>BOM (부품구성)</Title>
+        <Text type="secondary">완제품이 여러 부품으로 나뉘어 각각 다른 공정을 거친 뒤 조립되는 경우의 구성 관리</Text>
+      </div>
+
+      {/* 엑셀 업로드 */}
+      <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:20}}>
+        <div style={{marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+          <FileExcelOutlined style={{fontSize:16,color:'#10B981'}} />
+          <Text strong>BOM 엑셀 업로드</Text>
+          <Text type="secondary" style={{fontSize:12}}>— 완제품별 부품 구성 엑셀을 드래그하세요</Text>
+          <Button size="small" icon={<DownloadOutlined />} onClick={downloadBomTemplate}>양식 다운로드</Button>
+          <Tooltip title={
+            <div>
+              <div style={{fontWeight:700,marginBottom:4}}>필요 컬럼명 (순서 무관)</div>
+              <div>완제품코드 / 주문PT#, 완제품명</div>
+              <div>부품도번, 부품명, 수량, 단위</div>
+            </div>
+          }>
+            <Tag color="blue" style={{cursor:'help',fontSize:11}}>컬럼 형식 안내</Tag>
+          </Tooltip>
+        </div>
+
+        <div
+          onDragOver={e=>{ e.preventDefault(); e.currentTarget.style.borderColor='#3B82F6'; e.currentTarget.style.background='rgba(59,130,246,0.04)' }}
+          onDragLeave={e=>{ e.currentTarget.style.borderColor=''; e.currentTarget.style.background='' }}
+          onDrop={e=>{ e.preventDefault(); e.currentTarget.style.borderColor=''; e.currentTarget.style.background=''; const f=e.dataTransfer.files[0]; if(f) handleFile(f) }}
+          onClick={()=>document.getElementById('bomExcelInput').click()}
+          style={{border:'2px dashed #CBD5E1',borderRadius:10,padding:'24px',textAlign:'center',cursor:'pointer',transition:'all 0.2s',background:'#FAFBFC'}}
+        >
+          <input id="bomExcelInput" type="file" accept=".xlsx,.xls" style={{display:'none'}}
+            onChange={e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value='' }} />
+          {parsing
+            ? <Text type="secondary">⏳ 파싱 중...</Text>
+            : <><InboxOutlined style={{fontSize:28,color:'#94A3B8',display:'block',marginBottom:6}} />
+              <Text type="secondary" style={{fontSize:13}}>BOM 엑셀 파일을 드래그하거나 클릭하여 선택</Text></>}
+        </div>
+
+        {importLog.length > 0 && (
+          <Alert type="success" showIcon icon={<CheckCircleOutlined />} style={{marginTop:12,borderRadius:8}}
+            message={importLog.map((l,i)=>
+              <Text key={i} style={{fontSize:12}}>{l.filename} — {l.count}건 반영 <Text type="secondary">{l.at}</Text></Text>
+            )} closable />
+        )}
+      </Card>
+
+      {/* 목록 */}
+      <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
+        <Space style={{marginBottom:14}} size={8}>
+          <Input placeholder="완제품코드 / 완제품명" prefix={<SearchOutlined />}
+            style={{width:240}} value={searchText} onChange={e=>setSearchText(e.target.value)} allowClear />
+          <Button type="primary" icon={<PlusOutlined />}
+            style={{marginLeft:'auto',background:'#10B981',borderColor:'#10B981'}}
+            onClick={()=>{ setFormGroup(null); setFormOpen(true) }}>수동 등록</Button>
+        </Space>
+
+        <Spin spinning={dbLoading}>
+          <Table columns={cols} dataSource={groups} rowKey="productCode"
+            pagination={{pageSize:15,showTotal:t=>`총 ${t}개 완제품`}}
+            bordered size="small" scroll={{x:900}}
+            locale={{emptyText:<Empty description="BOM 데이터가 없습니다. 위에서 엑셀을 업로드하거나 수동 등록하세요." />}} />
+        </Spin>
+      </Card>
+
+      <BomFormDrawer group={formGroup} open={formOpen} onClose={()=>setFormOpen(false)} onSaved={loadBom} />
     </div>
   )
 }
@@ -1202,6 +1500,7 @@ export function ProcessPlan({ sub }) {
   if (sub==='gantt')               return <GanttChart />
   if (sub==='processMaster')       return <ProcessMaster />
   if (sub==='processRoute')        return <ProcessRouteMaster />
+  if (sub==='bom')                 return <BomMaster />
   if (sub==='workerMaster')        return <WorkerMaster />
   if (sub==='equipMaster')         return <EquipMaster />
   return <PlaceholderPage title={sub} />
