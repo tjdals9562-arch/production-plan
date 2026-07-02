@@ -158,9 +158,11 @@ function AppMain({ user, onLogout }) {
     const nav = (m, s) => { setMenuKey(m); setSubKey(s); setOpenKeys(k => [...new Set([...k, m])]); pushTab(m, s) }
     switch (menuKey) {
       case 'dashboard':      return <Dashboard onNav={nav} />
-      case 'autoSchedule':   return subKey === 'workOrder' || subKey === 'gantt' || subKey === 'processLoad'
-                               ? <ProcessPlan sub={subKey} />
-                               : <AutoSchedule />
+      case 'autoSchedule': {
+        if (subKey === 'workOrder' || subKey === 'processLoad') return <ProcessPlan sub={subKey} />
+        const AS_TAB = { gantt:'gantt', weekPlan:'week', dayPlan:'day', workerPlan:'worker' }
+        return <AutoSchedule key={subKey || 'generate'} initialTab={AS_TAB[subKey]} />
+      }
       case 'order':          return <OrderManagement sub={subKey} />
       case 'mps':       return <MasterPlan sub={subKey} />
       case 'process':   return <ProcessPlan sub={subKey} />

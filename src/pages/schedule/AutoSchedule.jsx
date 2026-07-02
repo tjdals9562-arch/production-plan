@@ -20,7 +20,7 @@ import { schedule, buildWorkerDailyPlan, buildGanttData } from '../../utils/sche
 import { loadScheduleRules } from '../master/ScheduleRules.jsx'
 import { fetchOrders, fetchProcessRoutes, fetchWorkers, fetchEquipment, fetchBom,
   saveSchedule, fetchSchedules, fetchScheduleById, deleteSchedule } from '../../api/db.js'
-import { SaveOutlined, HistoryOutlined, ClearOutlined } from '@ant-design/icons'
+import { SaveOutlined, HistoryOutlined, ClearOutlined, ScheduleOutlined } from '@ant-design/icons'
 
 const { Title, Text } = Typography
 
@@ -467,6 +467,110 @@ function WorkerPlanView({ workerPlan, dateRange }) {
   )
 }
 
+// ─── 일자별 확장 (task가 걸친 모든 근무일에 카운트) ──────────────
+function expandTasksByDate(tasks) {
+  const map = {}
+  tasks.forEach(t => {
+    if (!t.startDate || !t.endDate) return
+    let cur = dayjs(t.startDate)
+    const end = dayjs(t.endDate)
+    let guard = 0
+    while (!cur.isAfter(end) && guard < 400) {
+      const key = cur.format('YYYY-MM-DD')
+      if (!map[key]) map[key] = []
+      map[key].push(t)
+      cur = cur.add(1, 'day')
+      guard++
+    }
+  })
+  return map
+}
+
+// 주차 시작일 — 일요일~토요일 기준 (금산산기 주차 관례)
+function weekBucketStart(dateStr) {
+  const d = dayjs(dateStr)
+  return d.subtract(d.day(), 'day').format('YYYY-MM-DD')
+}
+
+function summarizeTasks(dayTasks) {
+  const byProcess = {}
+  let qty = 0, risk = 0
+  dayTasks.forEach(t => {
+    byProcess[t.processName] = (byProcess[t.processName] || 0) + 1
+    qty += t.qty || 0
+    if (t.status === '위험') risk++
+  })
+  return { count: dayTasks.length, qty, risk, byProcess }
+}
+
+function ProcessBreakdownTags({ byProcess }) {
+  return (
+    <Space size={4} wrap>
+      {Object.entries(byProcess).map(([name, cnt]) => (
+        <Tag key={name} style={{background:pc(name)+'20',color:pc(name),border:`1px solid ${pc(name)}55`,fontSize:11}}>{name} {cnt}</Tag>
+      ))}
+    </Space>
+  )
+}
+
+// ─── 일일 생산계획 뷰 — 자동계획 결과를 날짜별로 집계 ──────────────
+function DailyPlanView({ tasks }) {
+  const byDate = useMemo(() => expandTasksByDate(tasks), [tasks])
+  const dates = useMemo(() => Object.keys(byDate).sort(), [byDate])
+
+  if (!dates.length) return <Empty description="계획 생성 후 확인 가능합니다" />
+
+  const dataSource = dates.map(date => ({ key: date, date, ...summarizeTasks(byDate[date]) }))
+
+  const cols = [
+    { title:'날짜', dataIndex:'date', width:110, render:v=><Text strong style={{fontFamily:'monospace'}}>{v}</Text> },
+    { title:'요일', dataIndex:'date', width:60, align:'center',
+      render:v=>{ const d=dayjs(v); const isWE=d.day()===0||d.day()===6
+        return <Text style={{color:isWE?'#EF4444':'#0F172A'}}>{'일월화수목금토'[d.day()]}</Text> } },
+    { title:'작업건수', dataIndex:'count', width:90, align:'center', render:v=><Tag color="blue">{v}건</Tag> },
+    { title:'총수량', dataIndex:'qty', width:100, align:'center', render:v=><Text strong>{v.toLocaleString()}</Text> },
+    { title:'공정별 건수', key:'byProcess', render:(_,r)=><ProcessBreakdownTags byProcess={r.byProcess} /> },
+    { title:'위험', dataIndex:'risk', width:70, align:'center',
+      render:v=>v>0 ? <Tag color="error">{v}건</Tag> : <Text type="secondary">—</Text> },
+  ]
+
+  return <Table columns={cols} dataSource={dataSource} pagination={false} bordered size="small" virtual scroll={{y:560}} />
+}
+
+// ─── 주간 생산계획 뷰 — 자동계획 결과를 주(일~토) 단위로 집계 ──────
+function WeeklyPlanView({ tasks }) {
+  const byDate = useMemo(() => expandTasksByDate(tasks), [tasks])
+  const byWeek = useMemo(() => {
+    const map = {}
+    Object.entries(byDate).forEach(([date, dayTasks]) => {
+      const wk = weekBucketStart(date)
+      if (!map[wk]) map[wk] = []
+      map[wk].push(...dayTasks)
+    })
+    return map
+  }, [byDate])
+  const weeks = useMemo(() => Object.keys(byWeek).sort(), [byWeek])
+
+  if (!weeks.length) return <Empty description="계획 생성 후 확인 가능합니다" />
+
+  const dataSource = weeks.map(wk => ({
+    key: wk,
+    range: `${dayjs(wk).format('MM/DD')} ~ ${dayjs(wk).add(6,'day').format('MM/DD')}`,
+    ...summarizeTasks(byWeek[wk]),
+  }))
+
+  const cols = [
+    { title:'주차 (일~토)', dataIndex:'range', width:160, render:v=><Text strong>{v}</Text> },
+    { title:'작업건수', dataIndex:'count', width:90, align:'center', render:v=><Tag color="blue">{v}건</Tag> },
+    { title:'총수량', dataIndex:'qty', width:100, align:'center', render:v=><Text strong>{v.toLocaleString()}</Text> },
+    { title:'공정별 건수', key:'byProcess', render:(_,r)=><ProcessBreakdownTags byProcess={r.byProcess} /> },
+    { title:'위험', dataIndex:'risk', width:70, align:'center',
+      render:v=>v>0 ? <Tag color="error">{v}건</Tag> : <Text type="secondary">—</Text> },
+  ]
+
+  return <Table columns={cols} dataSource={dataSource} pagination={false} bordered size="small" />
+}
+
 // ─── 작업지시 목록 뷰 ────────────────────────────────────────────
 function TaskListView({ tasks }) {
   const dataSource = useMemo(() => tasks.map((t,i)=>({...t,key:i})), [tasks])
@@ -529,14 +633,14 @@ function loadPersisted() {
 }
 
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────
-export function AutoSchedule() {
+export function AutoSchedule({ initialTab } = {}) {
   const persisted = loadPersisted()
   const [tasks, setTasks] = useState(persisted?.tasks ?? null)
   const [modifiedCount, setModifiedCount] = useState(persisted?.modifiedCount ?? 0)
   const [generating, setGenerating] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
   const [startDateStr, setStartDateStr] = useState(persisted?.startDateStr ?? dayjs().format('YYYY-MM-DD'))
-  const [activeTab, setActiveTab] = useState('gantt')
+  const [activeTab, setActiveTab] = useState(initialTab || 'gantt')
   const [priorityRule, setPriorityRule] = useState(persisted?.priorityRule ?? 'EDD')
   const [saving, setSaving] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -693,6 +797,20 @@ export function AutoSchedule() {
       label: <Space><UserOutlined />작업자 일일계획</Space>,
       children: workerPlan
         ? <WorkerPlanView workerPlan={workerPlan} dateRange={[ganttStart, ganttEnd]} />
+        : <Empty description="계획 생성 후 확인 가능합니다" />,
+    },
+    {
+      key: 'day',
+      label: <Space><ClockCircleOutlined />일일 생산계획</Space>,
+      children: tasks
+        ? <DailyPlanView tasks={tasks} />
+        : <Empty description="계획 생성 후 확인 가능합니다" />,
+    },
+    {
+      key: 'week',
+      label: <Space><ScheduleOutlined />주간 생산계획</Space>,
+      children: tasks
+        ? <WeeklyPlanView tasks={tasks} />
         : <Empty description="계획 생성 후 확인 가능합니다" />,
     },
     {
