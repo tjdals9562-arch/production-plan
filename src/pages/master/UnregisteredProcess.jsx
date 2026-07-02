@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import {
   Table, Card, Row, Col, Button, Space, Tag, Typography, Statistic,
-  Drawer, Form, Input, InputNumber, Divider, message, Spin, Empty, Badge,
+  Drawer, Form, Input, InputNumber, AutoComplete, Divider, message, Spin, Empty, Badge,
 } from 'antd'
 import {
-  fetchOrders, fetchProcessRoutes, upsertProcessRoute,
+  fetchOrders, fetchProcessRoutes, upsertProcessRoute, fetchProcesses,
 } from '../../api/db.js'
 import {
   PlusOutlined, SettingOutlined, DeleteOutlined, CheckCircleOutlined,
@@ -19,6 +19,14 @@ const baseCode = (code) => (code || '').split('*')[0].trim()
 function RouteDrawer({ order, open, onClose, onSaved }) {
   const [form] = Form.useForm()
   const [saving, setSaving] = useState(false)
+  const [procOptions, setProcOptions] = useState([])
+
+  useEffect(() => {
+    if (!open) return
+    fetchProcesses().then(list => {
+      setProcOptions((list || []).filter(p => p.isActive).map(p => ({ value: p.name })))
+    }).catch(() => {})
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -98,7 +106,16 @@ function RouteDrawer({ order, open, onClose, onSaved }) {
               {fields.map((field, idx) => (
                 <div key={field.key} style={{ display: 'flex', gap: 4, marginBottom: 6, alignItems: 'center' }}>
                   <div style={{ flex: 0.4, textAlign: 'center', color: '#94A3B8', fontSize: 12 }}>{idx + 1}</div>
-                  <div style={{ flex: 2 }}><Form.Item name={[field.name, 'name']} noStyle rules={[{ required: true, message: '' }]}><Input placeholder="공정명" /></Form.Item></div>
+                  <div style={{ flex: 2 }}>
+                    <Form.Item name={[field.name, 'name']} noStyle rules={[{ required: true, message: '' }]}>
+                      <AutoComplete
+                        placeholder="공정명"
+                        options={procOptions}
+                        popupMatchSelectWidth={220}
+                        filterOption={(input, opt) => opt.value.toLowerCase().includes(input.toLowerCase())}
+                      />
+                    </Form.Item>
+                  </div>
                   <div style={{ flex: 1.2 }}><Form.Item name={[field.name, 'timePerEa']} noStyle><InputNumber min={0} step={0.1} style={{ width: '100%' }} placeholder="0" /></Form.Item></div>
                   <div style={{ flex: 1.2 }}><Form.Item name={[field.name, 'setupTime']} noStyle><InputNumber min={0} step={0.1} style={{ width: '100%' }} placeholder="0" /></Form.Item></div>
                   <div style={{ flex: 0.8 }}><Form.Item name={[field.name, 'workers']} noStyle><InputNumber min={1} style={{ width: '100%' }} placeholder="1" /></Form.Item></div>
