@@ -32,7 +32,7 @@ function RouteDrawer({ order, open, onClose, onSaved }) {
     if (!open) return
     form.resetFields()
     form.setFieldsValue({
-      productCode: baseCode(order?.productCode),
+      productCode: order?.productCode || '',
       productName: order?.productName || '',
       spec:        order?.spec || '',
       processes:   [{ seq: 1, name: '', timePerEa: 0, setupTime: 0, workers: 1, equip: '—' }],
@@ -61,7 +61,7 @@ function RouteDrawer({ order, open, onClose, onSaved }) {
       title={
         <Space>
           <SettingOutlined style={{ color: '#3B82F6' }} />
-          <Text strong>공정 등록 — {baseCode(order?.productCode)}</Text>
+          <Text strong>공정 등록 — {order?.productCode}</Text>
         </Space>
       }
       open={open} onClose={onClose} width={700}
@@ -183,7 +183,7 @@ export function UnregisteredProcess() {
     },
     {
       title: '주문PT#', dataIndex: 'productCode', width: 150,
-      render: v => <span style={cell}>{baseCode(v)}</span>,
+      render: v => <span style={cell}>{v || '—'}</span>,
     },
     {
       title: '품명', dataIndex: 'productName', width: 120, ellipsis: true,
