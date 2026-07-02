@@ -70,6 +70,7 @@ function WorkOrderFormDrawer({ order, orders, open, onClose, onSaved }) {
       form.setFieldsValue({
         wo: order.wo, so: order.so, product: order.product, assignee: order.assignee,
         start: order.start ? dayjs(order.start) : null,
+        end:   order.end   ? dayjs(order.end)   : null,
         plan: order.plan, done: order.done, status: order.status,
         steps: order.steps.length ? order.steps.map(s => ({ ...s })) : [{ name:'', days:1 }],
       })
@@ -86,7 +87,9 @@ function WorkOrderFormDrawer({ order, orders, open, onClose, onSaved }) {
       const steps = (vals.steps || []).filter(s => s.name).map(s => ({ name:s.name, days:Number(s.days) || 1 }))
       const totalDays = steps.reduce((s,p) => s+p.days, 0)
       const startStr = vals.start.format('YYYY-MM-DD')
-      const endStr = totalDays ? vals.start.add(totalDays-1,'day').format('YYYY-MM-DD') : startStr
+      // 종료일을 직접 입력했으면 그 값을 쓰고, 아니면 공정 단계 소요일수로 자동 계산
+      const autoEndStr = totalDays ? vals.start.add(totalDays-1,'day').format('YYYY-MM-DD') : startStr
+      const endStr = vals.end ? vals.end.format('YYYY-MM-DD') : autoEndStr
       const orderData = {
         key: order?.key,
         wo: vals.wo, so: vals.so, product: vals.product, assignee: vals.assignee,
@@ -127,6 +130,7 @@ function WorkOrderFormDrawer({ order, orders, open, onClose, onSaved }) {
           <Col span={8}><Form.Item label="담당자" name="assignee"><Input placeholder="미배정" /></Form.Item></Col>
           <Col span={12}><Form.Item label="제품명" name="product" rules={[{required:true,message:'필수'}]}><Input /></Form.Item></Col>
           <Col span={6}><Form.Item label="시작일" name="start" rules={[{required:true,message:'필수'}]}><DatePicker style={{width:'100%'}} /></Form.Item></Col>
+          <Col span={6}><Form.Item label="종료일" name="end" tooltip="비워두면 공정 단계 소요일수 합산으로 자동 계산됩니다"><DatePicker style={{width:'100%'}} /></Form.Item></Col>
           <Col span={6}><Form.Item label="상태" name="status"><Select options={WO_STATUS_OPTIONS.map(s=>({label:s,value:s}))} /></Form.Item></Col>
           <Col span={6}><Form.Item label="계획수량" name="plan"><InputNumber min={0} style={{width:'100%'}} /></Form.Item></Col>
           <Col span={6}><Form.Item label="완료수량" name="done"><InputNumber min={0} style={{width:'100%'}} /></Form.Item></Col>
