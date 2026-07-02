@@ -190,24 +190,24 @@ const procColor = () => '#3B82F6'
 const INIT_ROUTES = [
   { key:'r1', productCode:'4UF0062*A', productName:'SILL SUPPORT', spec:'T4.5*60*109 W',
     processes:[
-      { seq:1, name:'레이저', timePerEa:0.5, setupTime:0.5, workers:1, equip:'파이버 레이저 #1' },
-      { seq:2, name:'벤딩',   timePerEa:0.3, setupTime:0.3, workers:1, equip:'CNC 벤딩 #1' },
-      { seq:3, name:'탭핑',   timePerEa:0.2, setupTime:0.2, workers:1, equip:'탭핑 머신' },
-      { seq:4, name:'포장',   timePerEa:0.1, setupTime:0.0, workers:1, equip:'—' },
+      { seq:1, name:'레이저', dept:'제관반', timePerEa:0.5, setupTime:0.5, workers:1, equip:'파이버 레이저 #1' },
+      { seq:2, name:'벤딩',   dept:'제관반', timePerEa:0.3, setupTime:0.3, workers:1, equip:'CNC 벤딩 #1' },
+      { seq:3, name:'탭핑',   dept:'제관반', timePerEa:0.2, setupTime:0.2, workers:1, equip:'탭핑 머신' },
+      { seq:4, name:'포장',   dept:'제관반', timePerEa:0.1, setupTime:0.0, workers:1, equip:'—' },
     ]},
   { key:'r2', productCode:'3HH-001B', productName:'HH-프레임 ASSY', spec:'T3.2 SS400',
     processes:[
-      { seq:1, name:'레이저', timePerEa:0.8, setupTime:0.5, workers:1, equip:'파이버 레이저 #2' },
-      { seq:2, name:'용접',   timePerEa:1.5, setupTime:0.5, workers:2, equip:'CO2 용접 #1' },
-      { seq:3, name:'도장',   timePerEa:0.5, setupTime:1.0, workers:1, equip:'도장 부스 #1' },
-      { seq:4, name:'조립',   timePerEa:0.8, setupTime:0.3, workers:2, equip:'조립 라인' },
+      { seq:1, name:'레이저', dept:'제관반', timePerEa:0.8, setupTime:0.5, workers:1, equip:'파이버 레이저 #2' },
+      { seq:2, name:'용접',   dept:'제관반', timePerEa:1.5, setupTime:0.5, workers:2, equip:'CO2 용접 #1' },
+      { seq:3, name:'도장',   dept:'제관반', timePerEa:0.5, setupTime:1.0, workers:1, equip:'도장 부스 #1' },
+      { seq:4, name:'조립',   dept:'조립반', timePerEa:0.8, setupTime:0.3, workers:2, equip:'조립 라인' },
     ]},
   { key:'r3', productCode:'BKT-SET', productName:'구조체 브라켓 SET', spec:'T4.5 SS400',
     processes:[
-      { seq:1, name:'레이저', timePerEa:0.6, setupTime:0.5, workers:1, equip:'파이버 레이저 #1' },
-      { seq:2, name:'프레스', timePerEa:0.4, setupTime:0.5, workers:1, equip:'CNC 벤딩 #2' },
-      { seq:3, name:'용접',   timePerEa:2.0, setupTime:0.5, workers:2, equip:'CO2 용접 #2' },
-      { seq:4, name:'조립',   timePerEa:1.0, setupTime:0.3, workers:2, equip:'조립 라인' },
+      { seq:1, name:'레이저', dept:'제관반', timePerEa:0.6, setupTime:0.5, workers:1, equip:'파이버 레이저 #1' },
+      { seq:2, name:'프레스', dept:'제관반', timePerEa:0.4, setupTime:0.5, workers:1, equip:'CNC 벤딩 #2' },
+      { seq:3, name:'용접',   dept:'제관반', timePerEa:2.0, setupTime:0.5, workers:2, equip:'CO2 용접 #2' },
+      { seq:4, name:'조립',   dept:'조립반', timePerEa:1.0, setupTime:0.3, workers:2, equip:'조립 라인' },
     ]},
 ]
 
@@ -218,6 +218,7 @@ const ROUTE_COL_MAP = {
   '규격':'spec',            'Spec':'spec',
   '공정순서':'seq',          '순서':'seq', 'Seq':'seq',
   '공정명':'name',           '공정':'name', 'Process':'name',
+  '작업구분':'dept',         '소속반':'dept', '반':'dept', 'Dept':'dept',
   '소요시간':'timePerEa',    'EA당시간(h)':'timePerEa', 'Time/EA':'timePerEa', '시간/EA':'timePerEa',
   '셋업시간':'setupTime',    'Setup(h)':'setupTime', '준비시간':'setupTime',
   '필요인원':'workers',      '인원':'workers', 'Workers':'workers',
@@ -254,6 +255,7 @@ function parseRouteExcel(file) {
             productMap[key].processes.push({
               seq: Number(obj.seq) || productMap[key].processes.length + 1,
               name: String(obj.name || '').trim(),
+              dept: String(obj.dept || '').trim(),
               timePerEa: parseFloat(obj.timePerEa) || 0,
               setupTime: parseFloat(obj.setupTime) || 0,
               workers: parseInt(obj.workers) || 1,
@@ -281,7 +283,7 @@ function ProcessFlow({ processes }) {
         <Space key={i} size={4} style={{display:'flex',alignItems:'center'}}>
           <Tooltip title={
             <div>
-              <div><strong>{p.name}</strong></div>
+              <div><strong>{p.name}</strong>{p.dept && <span style={{marginLeft:6,opacity:0.7}}>({p.dept})</span>}</div>
               <div>소요: {p.timePerEa}h/EA</div>
               <div>셋업: {p.setupTime}h</div>
               <div>인원: {p.workers}명</div>
@@ -318,7 +320,7 @@ function RouteFormDrawer({ route, open, onClose, onSaved }) {
       })
     } else {
       form.resetFields()
-      form.setFieldsValue({ processes: [{ seq:1, name:'', timePerEa:0, setupTime:0, workers:1, equip:'—' }] })
+      form.setFieldsValue({ processes: [{ seq:1, name:'', dept:'', timePerEa:0, setupTime:0, workers:1, equip:'—' }] })
     }
   }, [open, route])
 
@@ -368,8 +370,8 @@ function RouteFormDrawer({ route, open, onClose, onSaved }) {
         <Divider style={{margin:'4px 0 12px'}}>공정 단계</Divider>
 
         <div style={{display:'flex',gap:4,marginBottom:6,padding:'0 4px'}}>
-          {['#','공정명','소요(h/EA)','셋업(h)','인원','설비',''].map((h,i)=>(
-            <div key={i} style={{flex:[0.4,2,1.2,1.2,0.8,2,0.5][i],fontSize:11,fontWeight:600,color:'#64748B'}}>{h}</div>
+          {['#','공정명','작업구분','소요(h/EA)','셋업(h)','인원','설비',''].map((h,i)=>(
+            <div key={i} style={{flex:[0.4,1.8,1.2,1,1,0.7,1.6,0.5][i],fontSize:11,fontWeight:600,color:'#64748B'}}>{h}</div>
           ))}
         </div>
 
@@ -379,18 +381,19 @@ function RouteFormDrawer({ route, open, onClose, onSaved }) {
               {fields.map((field, idx) => (
                 <div key={field.key} style={{display:'flex',gap:4,marginBottom:6,alignItems:'center'}}>
                   <div style={{flex:0.4,textAlign:'center',color:'#94A3B8',fontSize:12}}>{idx+1}</div>
-                  <div style={{flex:2}}><Form.Item name={[field.name,'name']} noStyle rules={[{required:true,message:''}]}><Input placeholder="공정명" /></Form.Item></div>
-                  <div style={{flex:1.2}}><Form.Item name={[field.name,'timePerEa']} noStyle><InputNumber min={0} step={0.1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
-                  <div style={{flex:1.2}}><Form.Item name={[field.name,'setupTime']} noStyle><InputNumber min={0} step={0.1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
-                  <div style={{flex:0.8}}><Form.Item name={[field.name,'workers']} noStyle><InputNumber min={1} style={{width:'100%'}} placeholder="1" /></Form.Item></div>
-                  <div style={{flex:2}}><Form.Item name={[field.name,'equip']} noStyle><Input placeholder="설비명" /></Form.Item></div>
+                  <div style={{flex:1.8}}><Form.Item name={[field.name,'name']} noStyle rules={[{required:true,message:''}]}><Input placeholder="공정명" /></Form.Item></div>
+                  <div style={{flex:1.2}}><Form.Item name={[field.name,'dept']} noStyle><Select placeholder="작업구분" allowClear options={DEPT_OPTIONS.map(d=>({label:d,value:d}))} /></Form.Item></div>
+                  <div style={{flex:1}}><Form.Item name={[field.name,'timePerEa']} noStyle><InputNumber min={0} step={0.1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
+                  <div style={{flex:1}}><Form.Item name={[field.name,'setupTime']} noStyle><InputNumber min={0} step={0.1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
+                  <div style={{flex:0.7}}><Form.Item name={[field.name,'workers']} noStyle><InputNumber min={1} style={{width:'100%'}} placeholder="1" /></Form.Item></div>
+                  <div style={{flex:1.6}}><Form.Item name={[field.name,'equip']} noStyle><Input placeholder="설비명" /></Form.Item></div>
                   <div style={{flex:0.5}}>
                     <Button size="small" danger type="text" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
                   </div>
                 </div>
               ))}
               <Button type="dashed" block icon={<PlusOutlined />} style={{marginTop:4}}
-                onClick={() => add({ seq:fields.length+1, name:'', timePerEa:0, setupTime:0, workers:1, equip:'—' })}>
+                onClick={() => add({ seq:fields.length+1, name:'', dept:'', timePerEa:0, setupTime:0, workers:1, equip:'—' })}>
                 공정 추가
               </Button>
             </>
@@ -493,8 +496,9 @@ function ProcessRouteMaster() {
               <div style={{fontWeight:700,marginBottom:4}}>필요 컬럼명 (순서 무관)</div>
               <div>제품코드 / 주문PT#</div>
               <div>품명, 규격, 공정순서</div>
-              <div>공정명, 소요시간 (h/EA)</div>
-              <div>셋업시간 (h), 필요인원, 사용설비</div>
+              <div>공정명, 작업구분 (제관반/조립반)</div>
+              <div>소요시간 (h/EA), 셋업시간 (h)</div>
+              <div>필요인원, 사용설비</div>
             </div>
           }>
             <Tag color="blue" style={{cursor:'help',fontSize:11}}>컬럼 형식 안내</Tag>
@@ -574,12 +578,12 @@ const DEPT_OPTIONS = ['레이저반', '제관반', '조립반']
 const DEPT_COLOR = { '레이저반': 'blue', '제관반': 'orange', '조립반': 'green' }
 
 const INIT_WORKERS = [
-  { key:'w1', empId:'EMP-001', name:'김철수', primary:'용접',   secondary:['레이저'],      days:['월','화','수','목','금'], dayHours:8,  overtime:2, note:'' },
-  { key:'w2', empId:'EMP-002', name:'이영희', primary:'레이저', secondary:['벤딩'],         days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
-  { key:'w3', empId:'EMP-003', name:'박민준', primary:'도장',   secondary:[],               days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
-  { key:'w4', empId:'EMP-004', name:'정수진', primary:'조립',   secondary:['벤딩','탭핑'],  days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
-  { key:'w5', empId:'EMP-005', name:'최민호', primary:'레이저', secondary:['용접'],          days:['월','화','수','목'],      dayHours:8,  overtime:4, note:'목요일까지 근무' },
-  { key:'w6', empId:'EMP-006', name:'강지원', primary:'벤딩',   secondary:['레이저','탭핑'],days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
+  { key:'w1', empId:'EMP-001', name:'김철수', dept:'제관반', primary:'용접',   secondary:['레이저'],      days:['월','화','수','목','금'], dayHours:8,  overtime:2, note:'' },
+  { key:'w2', empId:'EMP-002', name:'이영희', dept:'제관반', primary:'레이저', secondary:['벤딩'],         days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
+  { key:'w3', empId:'EMP-003', name:'박민준', dept:'제관반', primary:'도장',   secondary:[],               days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
+  { key:'w4', empId:'EMP-004', name:'정수진', dept:'조립반', primary:'조립',   secondary:['벤딩','탭핑'],  days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
+  { key:'w5', empId:'EMP-005', name:'최민호', dept:'제관반', primary:'레이저', secondary:['용접'],          days:['월','화','수','목'],      dayHours:8,  overtime:4, note:'목요일까지 근무' },
+  { key:'w6', empId:'EMP-006', name:'강지원', dept:'제관반', primary:'벤딩',   secondary:['레이저','탭핑'],days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
 ]
 
 function WorkerMaster() {
@@ -653,6 +657,9 @@ function WorkerMaster() {
 
   const cols = [
     { title:'이름', dataIndex:'name', width:90, render:v=><Text strong>{v}</Text> },
+    { title:'소속반', dataIndex:'dept', width:80,
+      render:v=>v ? <Tag color={DEPT_COLOR[v]||'default'}>{v}</Tag> : <Text type="secondary">—</Text>,
+      filters: DEPT_OPTIONS.map(d=>({text:d,value:d})), onFilter:(v,r)=>r.dept===v },
     { title:'주력공정', dataIndex:'primary', width:100,
       render:v=><Tag style={{background:procColor(v)+'22',color:procColor(v),border:`1px solid ${procColor(v)}55`,fontWeight:600}}>{v}</Tag> },
     { title:'겸직공정', dataIndex:'secondary', render:v=>(
@@ -692,8 +699,9 @@ function WorkerMaster() {
 
   const summary = {
     total: workers.length,
+    jegwan: workers.filter(w=>w.dept==='제관반').length,
+    jorip: workers.filter(w=>w.dept==='조립반').length,
     withOt: workers.filter(w=>(w.overtime||0)>0).length,
-    processes: [...new Set(workers.map(w=>w.primary))].length,
   }
 
   return (
@@ -704,8 +712,8 @@ function WorkerMaster() {
       </div>
 
       <Row gutter={12} style={{marginBottom:16}}>
-        {[{l:'총 작업자',v:summary.total+'명',c:'#3B82F6'},{l:'잔업 가능',v:summary.withOt+'명',c:'#F59E0B'},{l:'담당 공정종류',v:summary.processes+'개',c:'#10B981'}].map((s,i)=>(
-          <Col key={i} span={8}>
+        {[{l:'총 작업자',v:summary.total+'명',c:'#3B82F6'},{l:'제관반',v:summary.jegwan+'명',c:'#F97316'},{l:'조립반',v:summary.jorip+'명',c:'#10B981'},{l:'잔업 가능',v:summary.withOt+'명',c:'#F59E0B'}].map((s,i)=>(
+          <Col key={i} span={6}>
             <Card bordered={false} style={{borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,0.06)',borderTop:`3px solid ${s.c}`}} styles={{body:{padding:'12px 16px'}}}>
               <Statistic title={<Text style={{fontSize:12,color:'#64748B'}}>{s.l}</Text>} value={s.v} valueStyle={{fontSize:20,fontWeight:800,color:s.c}} />
             </Card>
@@ -749,8 +757,11 @@ function WorkerMaster() {
         confirmLoading={saving} width={580}>
         <Form form={form} layout="vertical" style={{marginTop:16}}>
           <Row gutter={16}>
-            <Col span={12}><Form.Item label="이름" name="name" rules={[{required:true}]}><Input /></Form.Item></Col>
-            <Col span={12}><Form.Item label="주력공정" name="primary" rules={[{required:true}]}>
+            <Col span={8}><Form.Item label="이름" name="name" rules={[{required:true}]}><Input /></Form.Item></Col>
+            <Col span={8}><Form.Item label="소속반" name="dept" rules={[{required:true}]}>
+              <Select options={DEPT_OPTIONS.map(d=>({label:d,value:d}))} placeholder="선택" />
+            </Form.Item></Col>
+            <Col span={8}><Form.Item label="주력공정" name="primary" rules={[{required:true}]}>
               <Select options={procOpts} showSearch />
             </Form.Item></Col>
             <Col span={24}><Form.Item label="겸직공정 (복수 선택)">

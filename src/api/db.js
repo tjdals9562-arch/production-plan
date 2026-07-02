@@ -143,6 +143,7 @@ function toWorker(w) {
     key:       String(w.id),
     empId:     w.emp_id             ?? '',
     name:      w.name               ?? '',
+    dept:      w.dept               ?? '',
     primary:   w.primary_process    ?? '',
     secondary: Array.isArray(w.secondary_processes) ? w.secondary_processes : [],
     days:      Array.isArray(w.work_days)            ? w.work_days            : [],
@@ -162,6 +163,7 @@ export async function saveWorker(worker, isNew) {
   const row = {
     emp_id:               worker.empId   || null,
     name:                 worker.name,
+    dept:                 worker.dept    || null,
     primary_process:      worker.primary || null,
     secondary_processes:  worker.secondary ?? [],
     work_days:            worker.days      ?? [],
@@ -186,7 +188,7 @@ export async function deleteWorkerById(id) {
 
 export async function seedWorkers(workers) {
   const rows = workers.map(w => ({
-    emp_id: w.empId, name: w.name, primary_process: w.primary,
+    emp_id: w.empId, name: w.name, dept: w.dept || null, primary_process: w.primary,
     secondary_processes: w.secondary ?? [],
     work_days: w.days ?? [],
     day_hours: w.dayHours ?? 8, overtime: w.overtime ?? 0, note: w.note ?? '',
@@ -271,6 +273,7 @@ function toRoute(r) {
       .map(s => ({
         seq:       s.seq,
         name:      s.name,
+        dept:      s.dept ?? '',
         timePerEa: s.time_per_ea,
         setupTime: s.setup_time,
         workers:   s.workers,
@@ -306,6 +309,7 @@ export async function upsertProcessRoute(route) {
       route_id:    routeId,
       seq:         p.seq,
       name:        p.name,
+      dept:        p.dept || null,
       time_per_ea: p.timePerEa,
       setup_time:  p.setupTime,
       workers:     p.workers,
