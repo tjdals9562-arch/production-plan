@@ -105,8 +105,9 @@ function calcSlack(order, routes, baseDate) {
   const route = routes.find(r => baseCode(r.productCode) === baseCode(order.productCode))
   if (!route?.processes?.length) return daysLeft
   const qty = Number(order.remainQty || order.orderQty || 1)
-  const totalHours = route.processes.reduce((s, p) => s + (p.timePerEa||0) * qty + (p.setupTime||0), 0)
-  return daysLeft - totalHours / 8
+  // timePerEa/setupTime은 분(min) 단위로 저장되므로 시간(h) 환산 후 계산
+  const totalMinutes = route.processes.reduce((s, p) => s + (p.timePerEa||0) * qty + (p.setupTime||0), 0)
+  return daysLeft - (totalMinutes / 60) / 8
 }
 
 // 라우팅 스텝 목록 하나를 순차 스케줄링 — BOM 부품 라우팅과 완제품 라우팅 모두에서 재사용
@@ -118,8 +119,9 @@ function scheduleRouteSteps(steps, order, qty, startDate, workerAvail, equipAvai
   let lastEndDay = null
 
   for (const proc of steps) {
-    const totalWorkHours = (proc.timePerEa || 0) * qty
-    const setupHours = proc.setupTime || 0
+    // timePerEa/setupTime은 분(min) 단위로 등록되므로 시간(h)으로 환산
+    const totalWorkHours = (proc.timePerEa || 0) * qty / 60
+    const setupHours = (proc.setupTime || 0) / 60
     const totalHours = totalWorkHours + setupHours
     const neededWorkers = Math.max(1, proc.workers || 1)
 
