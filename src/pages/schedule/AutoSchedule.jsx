@@ -20,7 +20,7 @@ import { schedule, buildWorkerDailyPlan, buildGanttData } from '../../utils/sche
 import { loadScheduleRules } from '../master/ScheduleRules.jsx'
 import { fetchOrders, fetchProcessRoutes, fetchWorkers, fetchEquipment, fetchBom,
   saveSchedule, fetchSchedules, fetchScheduleById, deleteSchedule } from '../../api/db.js'
-import { SaveOutlined, HistoryOutlined } from '@ant-design/icons'
+import { SaveOutlined, HistoryOutlined, ClearOutlined } from '@ant-design/icons'
 
 const { Title, Text } = Typography
 
@@ -521,15 +521,23 @@ const PRIORITY_OPTIONS = [
   { label: '투입순 (FIFO)', value: 'FIFO', desc: '수주 입력 순서대로 배정' },
 ]
 
+// 페이지를 이동했다 돌아와도 생성된 계획이 사라지지 않도록 localStorage에 보존 —
+// 사용자가 명시적으로 "초기화"를 누르기 전까지는 유지한다.
+const PERSIST_KEY = 'pp_autoschedule_state'
+function loadPersisted() {
+  try { return JSON.parse(localStorage.getItem(PERSIST_KEY) || 'null') } catch { return null }
+}
+
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────
 export function AutoSchedule() {
-  const [tasks, setTasks] = useState(null)
-  const [modifiedCount, setModifiedCount] = useState(0)
+  const persisted = loadPersisted()
+  const [tasks, setTasks] = useState(persisted?.tasks ?? null)
+  const [modifiedCount, setModifiedCount] = useState(persisted?.modifiedCount ?? 0)
   const [generating, setGenerating] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
-  const [startDateStr, setStartDateStr] = useState(dayjs().format('YYYY-MM-DD'))
+  const [startDateStr, setStartDateStr] = useState(persisted?.startDateStr ?? dayjs().format('YYYY-MM-DD'))
   const [activeTab, setActiveTab] = useState('gantt')
-  const [priorityRule, setPriorityRule] = useState('EDD')
+  const [priorityRule, setPriorityRule] = useState(persisted?.priorityRule ?? 'EDD')
   const [saving, setSaving] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyList, setHistoryList] = useState([])
@@ -545,6 +553,18 @@ export function AutoSchedule() {
 
   const ganttData = useMemo(() => tasks ? buildGanttData(tasks) : null, [tasks])
   const workerPlan = useMemo(() => tasks ? buildWorkerDailyPlan(tasks, workers) : null, [tasks, workers])
+
+  useEffect(() => {
+    try {
+      if (tasks) localStorage.setItem(PERSIST_KEY, JSON.stringify({ tasks, modifiedCount, startDateStr, priorityRule }))
+      else localStorage.removeItem(PERSIST_KEY)
+    } catch { /* localStorage 용량 초과 등은 무시 — 계획은 화면에서는 계속 유지됨 */ }
+  }, [tasks, modifiedCount, startDateStr, priorityRule])
+
+  const handleReset = () => {
+    setTasks(null)
+    setModifiedCount(0)
+  }
 
   useEffect(() => {
     Promise.all([
@@ -732,6 +752,12 @@ export function AutoSchedule() {
           )}
           {modifiedCount > 0 && <Tag color="orange" style={{fontSize:11}}>수동 조정 {modifiedCount}건</Tag>}
           <Button icon={<HistoryOutlined />} onClick={handleOpenHistory}>이력</Button>
+          {tasks && (
+            <Popconfirm title="화면의 계획을 초기화할까요?" description="저장하지 않은 수동 조정 내용은 사라집니다."
+              okText="초기화" cancelText="취소" okButtonProps={{danger:true}} onConfirm={handleReset}>
+              <Button icon={<ClearOutlined />} danger>초기화</Button>
+            </Popconfirm>
+          )}
         </Space>
       </div>
 
