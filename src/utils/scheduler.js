@@ -335,6 +335,7 @@ export function schedule(orders, routes, workers, equips, bomItems = [], startDa
         endDate: order.dueDate || baseDate.format('YYYY-MM-DD'),
         hours: 0,
         setupHours: 0,
+        totalHours: 0,
         status: '대기',
         warning: '공정경로 미등록',
       })
@@ -367,6 +368,7 @@ export function schedule(orders, routes, workers, equips, bomItems = [], startDa
             endDate: order.dueDate || baseDate.format('YYYY-MM-DD'),
             hours: 0,
             setupHours: 0,
+            totalHours: 0,
             status: '대기',
             warning: '부품 공정경로 미등록',
           })

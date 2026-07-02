@@ -597,7 +597,7 @@ function TaskListView({ tasks }) {
         </Space>
       )},
     { title:'설비', dataIndex:'assignedEquip', width:80, render:v=><Text style={{fontSize:12}}>{v||'—'}</Text> },
-    { title:'소요(h)', dataIndex:'hours', width:60, align:'center', render:v=><Text strong style={{color:'#7C3AED'}}>{v}h</Text> },
+    { title:'소요(분)', dataIndex:'hours', width:70, align:'center', render:v=><Text strong style={{color:'#7C3AED'}}>{Math.round((v||0)*60)}분</Text> },
     { title:'상태', dataIndex:'status', width:200,
       render:(v,r)=>(
         <span style={{whiteSpace:'nowrap'}}>
@@ -962,7 +962,7 @@ export function AutoSchedule({ initialTab } = {}) {
             {l:'총 작업지시',    v:tasks.length+'건',                       c:'#3B82F6'},
             {l:'납기위험',       v:riskTasks.length+'건',                    c:'#EF4444'},
             {l:'미배정',         v:unassigned.length+'건',                   c:'#F59E0B'},
-            {l:'총 소요시간',    v:tasks.reduce((s,t)=>s+t.totalHours,0).toFixed(0)+'h', c:'#7C3AED'},
+            {l:'총 소요시간',    v:Math.round(tasks.reduce((s,t)=>s+(t.totalHours||0),0)*60).toLocaleString()+'분', c:'#7C3AED'},
           ].map((s,i)=>(
             <Col key={i} span={6}>
               <Card bordered={false} style={{borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,0.06)',borderTop:`3px solid ${s.c}`}} styles={{body:{padding:'12px 16px'}}}>
