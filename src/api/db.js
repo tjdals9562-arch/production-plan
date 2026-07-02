@@ -144,6 +144,7 @@ function toWorker(w) {
     empId:     w.emp_id             ?? '',
     name:      w.name               ?? '',
     dept:      w.dept               ?? '',
+    position:  w.position           ?? '',
     primary:   w.primary_process    ?? '',
     secondary: Array.isArray(w.secondary_processes) ? w.secondary_processes : [],
     days:      Array.isArray(w.work_days)            ? w.work_days            : [],
@@ -164,6 +165,7 @@ export async function saveWorker(worker, isNew) {
     emp_id:               worker.empId   || null,
     name:                 worker.name,
     dept:                 worker.dept    || null,
+    position:             worker.position || null,
     primary_process:      worker.primary || null,
     secondary_processes:  worker.secondary ?? [],
     work_days:            worker.days      ?? [],
@@ -188,7 +190,7 @@ export async function deleteWorkerById(id) {
 
 export async function seedWorkers(workers) {
   const rows = workers.map(w => ({
-    emp_id: w.empId, name: w.name, dept: w.dept || null, primary_process: w.primary,
+    emp_id: w.empId, name: w.name, dept: w.dept || null, position: w.position || null, primary_process: w.primary,
     secondary_processes: w.secondary ?? [],
     work_days: w.days ?? [],
     day_hours: w.dayHours ?? 8, overtime: w.overtime ?? 0, note: w.note ?? '',

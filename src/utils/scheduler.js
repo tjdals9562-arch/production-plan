@@ -70,10 +70,15 @@ function nextWorkDay(d, workDays) {
   return d.add(1, 'day')
 }
 
+// 직급이 반장/계장인 작업자는 일 우선순위 배정에서 제외
+function isLeader(w) {
+  return w.position === '반장' || w.position === '계장'
+}
+
 // 특정 공정을 담당할 수 있는 작업자 목록 (주력 또는 겸직)
 function getCapableWorkers(processName, workers) {
   return workers.filter(w =>
-    w.primary === processName || (w.secondary || []).includes(processName)
+    !isLeader(w) && (w.primary === processName || (w.secondary || []).includes(processName))
   )
 }
 

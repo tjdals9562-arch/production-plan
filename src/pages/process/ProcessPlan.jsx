@@ -583,14 +583,16 @@ const INIT_PROCESSES = [
 const CATEGORIES = ['절단', '성형', '용접', '도장', '조립', '기타']
 const DEPT_OPTIONS = ['제관반', '조립반']
 const DEPT_COLOR = { '레이저반': 'blue', '제관반': 'orange', '조립반': 'green' }
+const POSITION_OPTIONS = ['사원', '조장', '반장', '계장']
+const LEADER_POSITIONS = ['반장', '계장']
 
 const INIT_WORKERS = [
-  { key:'w1', empId:'EMP-001', name:'김철수', dept:'제관반', primary:'용접',   secondary:['레이저'],      days:['월','화','수','목','금'], dayHours:8,  overtime:2, note:'' },
-  { key:'w2', empId:'EMP-002', name:'이영희', dept:'제관반', primary:'레이저', secondary:['벤딩'],         days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
-  { key:'w3', empId:'EMP-003', name:'박민준', dept:'제관반', primary:'도장',   secondary:[],               days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
-  { key:'w4', empId:'EMP-004', name:'정수진', dept:'조립반', primary:'조립',   secondary:['벤딩','탭핑'],  days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
-  { key:'w5', empId:'EMP-005', name:'최민호', dept:'제관반', primary:'레이저', secondary:['용접'],          days:['월','화','수','목'],      dayHours:8,  overtime:4, note:'목요일까지 근무' },
-  { key:'w6', empId:'EMP-006', name:'강지원', dept:'제관반', primary:'벤딩',   secondary:['레이저','탭핑'],days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
+  { key:'w1', empId:'EMP-001', name:'김철수', dept:'제관반', position:'사원', primary:'용접',   secondary:['레이저'],      days:['월','화','수','목','금'], dayHours:8,  overtime:2, note:'' },
+  { key:'w2', empId:'EMP-002', name:'이영희', dept:'제관반', position:'사원', primary:'레이저', secondary:['벤딩'],         days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
+  { key:'w3', empId:'EMP-003', name:'박민준', dept:'제관반', position:'사원', primary:'도장',   secondary:[],               days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
+  { key:'w4', empId:'EMP-004', name:'정수진', dept:'조립반', position:'사원', primary:'조립',   secondary:['벤딩','탭핑'],  days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
+  { key:'w5', empId:'EMP-005', name:'최민호', dept:'제관반', position:'사원', primary:'레이저', secondary:['용접'],          days:['월','화','수','목'],      dayHours:8,  overtime:4, note:'목요일까지 근무' },
+  { key:'w6', empId:'EMP-006', name:'강지원', dept:'제관반', position:'사원', primary:'벤딩',   secondary:['레이저','탭핑'],days:['월','화','수','목','금'], dayHours:8,  overtime:0, note:'' },
 ]
 
 function WorkerMaster() {
@@ -667,6 +669,9 @@ function WorkerMaster() {
     { title:'소속반', dataIndex:'dept', width:80,
       render:v=>v ? <Tag color={DEPT_COLOR[v]||'default'}>{v}</Tag> : <Text type="secondary">—</Text>,
       filters: DEPT_OPTIONS.map(d=>({text:d,value:d})), onFilter:(v,r)=>r.dept===v },
+    { title:'직급', dataIndex:'position', width:80,
+      render:v=>v ? <Tag color={LEADER_POSITIONS.includes(v)?'red':'default'}>{v}</Tag> : <Text type="secondary">—</Text>,
+      filters: POSITION_OPTIONS.map(p=>({text:p,value:p})), onFilter:(v,r)=>r.position===v },
     { title:'주력공정', dataIndex:'primary', width:100,
       render:v=><Tag style={{background:procColor(v)+'22',color:procColor(v),border:`1px solid ${procColor(v)}55`,fontWeight:600}}>{v}</Tag> },
     { title:'겸직공정', dataIndex:'secondary', render:v=>(
@@ -764,11 +769,14 @@ function WorkerMaster() {
         confirmLoading={saving} width={580}>
         <Form form={form} layout="vertical" style={{marginTop:16}}>
           <Row gutter={16}>
-            <Col span={8}><Form.Item label="이름" name="name" rules={[{required:true}]}><Input /></Form.Item></Col>
-            <Col span={8}><Form.Item label="소속반" name="dept" rules={[{required:true}]}>
+            <Col span={6}><Form.Item label="이름" name="name" rules={[{required:true}]}><Input /></Form.Item></Col>
+            <Col span={6}><Form.Item label="소속반" name="dept" rules={[{required:true}]}>
               <Select options={DEPT_OPTIONS.map(d=>({label:d,value:d}))} placeholder="선택" />
             </Form.Item></Col>
-            <Col span={8}><Form.Item label="주력공정" name="primary" rules={[{required:true}]}>
+            <Col span={6}><Form.Item label="직급" name="position">
+              <Select options={POSITION_OPTIONS.map(p=>({label:p,value:p}))} placeholder="사원" allowClear />
+            </Form.Item></Col>
+            <Col span={6}><Form.Item label="주력공정" name="primary" rules={[{required:true}]}>
               <Select options={procOpts} showSearch />
             </Form.Item></Col>
             <Col span={24}><Form.Item label="겸직공정 (복수 선택)">
