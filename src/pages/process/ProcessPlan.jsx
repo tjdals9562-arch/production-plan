@@ -1,15 +1,17 @@
 ﻿import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Table, Card, Row, Col, Button, Space, Select, Tag, Typography, Badge, Progress, Tooltip,
   Form, Input, InputNumber, Modal, Drawer, Steps, Divider, Alert, message, Empty, Popconfirm, Statistic, Spin,
-  AutoComplete, Switch } from 'antd'
+  AutoComplete, Switch, DatePicker } from 'antd'
+import dayjs from 'dayjs'
 import {
   fetchWorkers, saveWorker, deleteWorkerById, seedWorkers,
   fetchEquipment, saveEquipment, deleteEquipmentById, seedEquipment,
   fetchProcessRoutes, upsertProcessRoute, deleteProcessRouteById, seedProcessRoutes,
   fetchProcesses, saveProcess, deleteProcessById, seedProcesses,
   fetchBom, upsertBomItems, deleteBomByProductCode,
+  fetchWorkOrders, saveWorkOrder, deleteWorkOrderById, seedWorkOrders,
 } from '../../api/db.js'
-import { PlusOutlined, PrinterOutlined, DownloadOutlined, SettingOutlined,
+import { PlusOutlined, DownloadOutlined, SettingOutlined,
   InboxOutlined, FileExcelOutlined, CheckCircleOutlined, EditOutlined, DeleteOutlined,
   ArrowRightOutlined, ClockCircleOutlined, TeamOutlined, ToolOutlined, SearchOutlined } from '@ant-design/icons'
 import * as XLSX from 'xlsx'
@@ -23,64 +25,211 @@ import {
 
 const { Title, Text } = Typography
 
-const WORK_ORDERS = [
-  { key:1, wo:'WO-2605-001', so:'SO-2605-001', product:'EL-2000 카케이스',   process:'레이저→벤딩→용접→도장',     assignee:'김철수', start:'2026-05-19', end:'2026-05-30', plan:12, done:10, status:'진행' },
-  { key:2, wo:'WO-2605-002', so:'SO-2605-002', product:'HH-프레임 ASSY',     process:'레이저→용접→도장→조립',     assignee:'이영희', start:'2026-05-19', end:'2026-05-31', plan:8,  done:5,  status:'진행' },
-  { key:3, wo:'WO-2605-003', so:'SO-2605-003', product:'제관 판넬 A타입',    process:'레이저→벤딩→도장',          assignee:'박민준', start:'2026-05-08', end:'2026-05-28', plan:20, done:20, status:'완료' },
-  { key:4, wo:'WO-2605-004', so:'SO-2605-004', product:'구조체 브라켓 SET',  process:'레이저→프레스→용접→조립',   assignee:'정수진', start:'2026-05-15', end:'2026-05-31', plan:15, done:8,  status:'지연' },
-  { key:5, wo:'WO-2605-005', so:'SO-2605-005', product:'도어프레임 EL',      process:'레이저→벤딩→도장',          assignee:'미배정', start:'2026-05-29', end:'2026-06-10', plan:6,  done:0,  status:'대기' },
-]
-
 const STATUS = { 완료:{color:'success',badge:'success'}, 진행:{color:'processing',badge:'processing'}, 지연:{color:'error',badge:'error'}, 대기:{color:'default',badge:'default'} }
+const WO_STATUS_OPTIONS = Object.keys(STATUS)
 
-const woColumns = [
-  { title:'작업지시', dataIndex:'wo', width:130, fixed:'left', render:v=><Text strong style={{color:'#3B82F6',fontSize:12}}>{v}</Text> },
-  { title:'수주번호', dataIndex:'so', width:120, render:v=><Text type="secondary" style={{fontSize:12}}>{v}</Text> },
-  { title:'제품명', dataIndex:'product', render:v=><Text strong>{v}</Text> },
-  { title:'공정순서', dataIndex:'process', render:v=>(
-    <Space size={2} wrap>
-      {v.split('→').map((p,i,arr)=>[
-        <Tag key={p} style={{fontSize:11,margin:0}}>{p}</Tag>,
-        i<arr.length-1 && <Text key={`a${i}`} type="secondary" style={{fontSize:10}}>→</Text>
-      ])}
-    </Space>
-  )},
-  { title:'담당자', dataIndex:'assignee', width:90, render:v=><Text style={{color:v==='미배정'?'#EF4444':'',fontWeight:v==='미배정'?700:''}}>{v}</Text> },
-  { title:'시작일', dataIndex:'start', width:100 },
-  { title:'완료예정', dataIndex:'end', width:100, render:(v,r)=><Text style={{color:r.status==='지연'?'#EF4444':'',fontWeight:r.status==='지연'?700:''}}>{v}</Text> },
-  { title:'계획/완료', key:'qty', width:90, align:'center', render:(_,r)=><><Text strong style={{color:'#10B981'}}>{r.done}</Text><Text type="secondary"> / {r.plan}</Text></> },
-  { title:'진행률', key:'rate', width:110,
-    render:(_,r)=>{
-      const pct = Math.round(r.done/r.plan*100)
-      return <Space size={4}><Progress percent={pct} size="small" style={{width:70}} showInfo={false} strokeColor={pct===100?'#10B981':pct>60?'#3B82F6':'#F59E0B'} trailColor="#F1F5F9"/><Text style={{fontSize:11,fontWeight:700}}>{pct}%</Text></Space>
-    },
-  },
-  { title:'상태', dataIndex:'status', width:80, filters:[{text:'완료',value:'완료'},{text:'진행',value:'진행'},{text:'지연',value:'지연'},{text:'대기',value:'대기'}], onFilter:(v,r)=>r.status===v,
-    render:v=><Badge status={STATUS[v]?.badge} text={v} /> },
-  { title:'액션', key:'action', width:100, fixed:'right',
-    render:()=><Space size={4}><Button size="small">상세</Button><Button size="small" icon={<PrinterOutlined />}>출력</Button></Space> },
-]
+// ── 작업지시 공정 단계 색상 (일정계획 Gantt와 공유) ──
+const STEP_COLOR_MAP = { 레이저:'#3B82F6', 벤딩:'#7C3AED', 프레스:'#7C3AED', 용접:'#F59E0B', 도장:'#10B981', 조립:'#0D9488' }
+const STEP_PALETTE = ['#3B82F6','#7C3AED','#F59E0B','#10B981','#0D9488','#EC4899','#F97316','#6366F1']
+const stepColor = (name, idx) => STEP_COLOR_MAP[name] || STEP_PALETTE[idx % STEP_PALETTE.length]
 
-// ── Gantt 차트 (CSS 기반) ──
-const DAYS = ['19','20','21','22','23','26','27','28','29','30','31']
 const DAY_W = 42
 
-const GANTT = [
-  { wo:'WO-2605-001', product:'EL-2000 카케이스', bars:[
-    {label:'레이저',start:0,len:3,color:'#3B82F6'},{label:'벤딩',start:3,len:2,color:'#7C3AED'},
-    {label:'용접',start:5,len:3,color:'#F59E0B'},{label:'도장',start:8,len:2,color:'#10B981'},
-  ]},
-  { wo:'WO-2605-002', product:'HH-프레임 ASSY', bars:[
-    {label:'레이저',start:0,len:2,color:'#3B82F6'},{label:'용접',start:2,len:5,color:'#F59E0B'},
-    {label:'도장',start:7,len:3,color:'#10B981'},{label:'조립',start:10,len:1,color:'#0D9488'},
-  ]},
-  { wo:'WO-2605-004', product:'구조체 브라켓 SET', bars:[
-    {label:'레이저',start:0,len:3,color:'#3B82F6'},{label:'프레스',start:3,len:3,color:'#7C3AED'},
-    {label:'용접',start:6,len:4,color:'#F59E0B'},{label:'조립',start:10,len:1,color:'#0D9488'},
-  ]},
+// ─── 작업지시 초기 샘플 데이터 ─────────────────────────────────────
+const INIT_WORK_ORDERS = [
+  { wo:'WO-2605-001', so:'SO-2605-001', product:'EL-2000 카케이스',   assignee:'김철수', start:'2026-05-19', end:'2026-05-30', plan:12, done:10, status:'진행',
+    steps:[{name:'레이저',days:3},{name:'벤딩',days:2},{name:'용접',days:3},{name:'도장',days:2}] },
+  { wo:'WO-2605-002', so:'SO-2605-002', product:'HH-프레임 ASSY',     assignee:'이영희', start:'2026-05-19', end:'2026-05-31', plan:8,  done:5,  status:'진행',
+    steps:[{name:'레이저',days:2},{name:'용접',days:5},{name:'도장',days:3},{name:'조립',days:1}] },
+  { wo:'WO-2605-003', so:'SO-2605-003', product:'제관 판넬 A타입',    assignee:'박민준', start:'2026-05-08', end:'2026-05-28', plan:20, done:20, status:'완료',
+    steps:[{name:'레이저',days:7},{name:'벤딩',days:7},{name:'도장',days:7}] },
+  { wo:'WO-2605-004', so:'SO-2605-004', product:'구조체 브라켓 SET',  assignee:'정수진', start:'2026-05-15', end:'2026-05-31', plan:15, done:8,  status:'지연',
+    steps:[{name:'레이저',days:3},{name:'프레스',days:3},{name:'용접',days:4},{name:'조립',days:1}] },
+  { wo:'WO-2605-005', so:'SO-2605-005', product:'도어프레임 EL',      assignee:'미배정', start:'2026-05-29', end:'2026-06-10', plan:6,  done:0,  status:'대기',
+    steps:[{name:'레이저',days:4},{name:'벤딩',days:4},{name:'도장',days:5}] },
 ]
 
+function nextWoNo(orders, baseDate) {
+  const ym = (baseDate ? dayjs(baseDate) : dayjs()).format('YYMM')
+  const nums = orders
+    .filter(o => o.wo.startsWith(`WO-${ym}-`))
+    .map(o => parseInt(o.wo.split('-').pop(), 10) || 0)
+  const next = (nums.length ? Math.max(...nums) : 0) + 1
+  return `WO-${ym}-${String(next).padStart(3,'0')}`
+}
+
+// ─── 작업지시 등록/수정 Drawer ─────────────────────────────────────
+function WorkOrderFormDrawer({ order, orders, open, onClose, onSaved }) {
+  const [form] = Form.useForm()
+  const [saving, setSaving] = useState(false)
+  const isNew = !order
+
+  useEffect(() => {
+    if (!open) return
+    if (order) {
+      form.setFieldsValue({
+        wo: order.wo, so: order.so, product: order.product, assignee: order.assignee,
+        start: order.start ? dayjs(order.start) : null,
+        plan: order.plan, done: order.done, status: order.status,
+        steps: order.steps.length ? order.steps.map(s => ({ ...s })) : [{ name:'', days:1 }],
+      })
+    } else {
+      form.resetFields()
+      form.setFieldsValue({ wo: nextWoNo(orders, null), status:'대기', plan:0, done:0, steps:[{ name:'', days:1 }] })
+    }
+  }, [open, order])
+
+  const handleSave = async () => {
+    try {
+      const vals = await form.validateFields()
+      setSaving(true)
+      const steps = (vals.steps || []).filter(s => s.name).map(s => ({ name:s.name, days:Number(s.days) || 1 }))
+      const totalDays = steps.reduce((s,p) => s+p.days, 0)
+      const startStr = vals.start.format('YYYY-MM-DD')
+      const endStr = totalDays ? vals.start.add(totalDays-1,'day').format('YYYY-MM-DD') : startStr
+      const orderData = {
+        key: order?.key,
+        wo: vals.wo, so: vals.so, product: vals.product, assignee: vals.assignee,
+        start: startStr, end: endStr, plan: vals.plan, done: vals.done, status: vals.status,
+        steps,
+      }
+      await saveWorkOrder(orderData, isNew)
+      message.success(isNew ? '발행 완료' : '수정 완료')
+      onSaved()
+      onClose()
+    } catch(e) {
+      if (e?.errorFields) return
+      message.error('저장 실패: ' + e.message)
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Drawer
+      title={
+        <Space>
+          <SettingOutlined style={{color:'#3B82F6'}} />
+          <Text strong>{isNew ? '작업지시 발행' : `${order?.wo} 수정`}</Text>
+        </Space>
+      }
+      open={open} onClose={onClose} width={680}
+      footer={
+        <Space style={{justifyContent:'flex-end',width:'100%'}}>
+          <Button onClick={onClose}>취소</Button>
+          <Button type="primary" loading={saving} onClick={handleSave}
+            style={{background:'#10B981',borderColor:'#10B981'}}>저장</Button>
+        </Space>
+      }
+    >
+      <Form form={form} layout="vertical" size="small">
+        <Row gutter={12}>
+          <Col span={8}><Form.Item label="작업지시번호" name="wo" rules={[{required:true,message:'필수'}]}><Input /></Form.Item></Col>
+          <Col span={8}><Form.Item label="수주번호" name="so"><Input /></Form.Item></Col>
+          <Col span={8}><Form.Item label="담당자" name="assignee"><Input placeholder="미배정" /></Form.Item></Col>
+          <Col span={12}><Form.Item label="제품명" name="product" rules={[{required:true,message:'필수'}]}><Input /></Form.Item></Col>
+          <Col span={6}><Form.Item label="시작일" name="start" rules={[{required:true,message:'필수'}]}><DatePicker style={{width:'100%'}} /></Form.Item></Col>
+          <Col span={6}><Form.Item label="상태" name="status"><Select options={WO_STATUS_OPTIONS.map(s=>({label:s,value:s}))} /></Form.Item></Col>
+          <Col span={6}><Form.Item label="계획수량" name="plan"><InputNumber min={0} style={{width:'100%'}} /></Form.Item></Col>
+          <Col span={6}><Form.Item label="완료수량" name="done"><InputNumber min={0} style={{width:'100%'}} /></Form.Item></Col>
+        </Row>
+
+        <Divider style={{margin:'4px 0 12px'}}>공정 단계 (순서대로 진행, 완료예정일 자동 계산)</Divider>
+
+        <div style={{display:'flex',gap:4,marginBottom:6,padding:'0 4px'}}>
+          {['#','공정명','소요일수',''].map((h,i)=>(
+            <div key={i} style={{flex:[0.4,2.4,1,0.5][i],fontSize:11,fontWeight:600,color:'#64748B'}}>{h}</div>
+          ))}
+        </div>
+
+        <Form.List name="steps">
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map((field, idx) => (
+                <div key={field.key} style={{display:'flex',gap:4,marginBottom:6,alignItems:'center'}}>
+                  <div style={{flex:0.4,textAlign:'center',color:'#94A3B8',fontSize:12}}>{idx+1}</div>
+                  <div style={{flex:2.4}}><Form.Item name={[field.name,'name']} noStyle rules={[{required:true,message:''}]}><Input placeholder="공정명" /></Form.Item></div>
+                  <div style={{flex:1}}><Form.Item name={[field.name,'days']} noStyle><InputNumber min={1} step={1} style={{width:'100%'}} placeholder="1" /></Form.Item></div>
+                  <div style={{flex:0.5}}>
+                    <Button size="small" danger type="text" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                  </div>
+                </div>
+              ))}
+              <Button type="dashed" block icon={<PlusOutlined />} style={{marginTop:4}}
+                onClick={() => add({ name:'', days:1 })}>
+                공정 추가
+              </Button>
+            </>
+          )}
+        </Form.List>
+      </Form>
+    </Drawer>
+  )
+}
+
 function WorkOrder() {
+  const [orders, setOrders] = useState([])
+  const [dbLoading, setDbLoading] = useState(true)
+  const [statusFilter, setStatusFilter] = useState()
+  const [formOpen, setFormOpen] = useState(false)
+  const [editOrder, setEditOrder] = useState(null)
+
+  const loadOrders = async () => {
+    setDbLoading(true)
+    try {
+      const data = await fetchWorkOrders()
+      if (data.length) { setOrders(data) }
+      else { await seedWorkOrders(INIT_WORK_ORDERS); setOrders(await fetchWorkOrders()) }
+    } catch { message.error('작업지시 데이터 로드 실패'); setOrders(INIT_WORK_ORDERS.map((o,i)=>({...o,key:String(i)}))) }
+    finally { setDbLoading(false) }
+  }
+
+  useEffect(() => { loadOrders() }, [])
+
+  const filtered = statusFilter ? orders.filter(o => o.status === statusFilter) : orders
+
+  const summary = {
+    완료: orders.filter(o=>o.status==='완료').length,
+    진행: orders.filter(o=>o.status==='진행').length,
+    지연: orders.filter(o=>o.status==='지연').length,
+    대기: orders.filter(o=>o.status==='대기').length,
+  }
+
+  const cols = [
+    { title:'작업지시', dataIndex:'wo', width:130, fixed:'left', render:v=><Text strong style={{color:'#3B82F6',fontSize:12}}>{v}</Text> },
+    { title:'수주번호', dataIndex:'so', width:120, render:v=><Text type="secondary" style={{fontSize:12}}>{v||'—'}</Text> },
+    { title:'제품명', dataIndex:'product', render:v=><Text strong>{v}</Text> },
+    { title:'공정순서', key:'process', render:(_,r)=>(
+      <Space size={2} wrap>
+        {(r.steps||[]).map((p,i,arr)=>[
+          <Tag key={p.name+i} style={{fontSize:11,margin:0}}>{p.name}</Tag>,
+          i<arr.length-1 && <Text key={`a${i}`} type="secondary" style={{fontSize:10}}>→</Text>
+        ])}
+        {(!r.steps || r.steps.length===0) && <Text type="secondary">—</Text>}
+      </Space>
+    )},
+    { title:'담당자', dataIndex:'assignee', width:90, render:v=><Text style={{color:v==='미배정'||!v?'#EF4444':'',fontWeight:v==='미배정'||!v?700:''}}>{v||'미배정'}</Text> },
+    { title:'시작일', dataIndex:'start', width:100 },
+    { title:'완료예정', dataIndex:'end', width:100, render:(v,r)=><Text style={{color:r.status==='지연'?'#EF4444':'',fontWeight:r.status==='지연'?700:''}}>{v}</Text> },
+    { title:'계획/완료', key:'qty', width:90, align:'center', render:(_,r)=><><Text strong style={{color:'#10B981'}}>{r.done}</Text><Text type="secondary"> / {r.plan}</Text></> },
+    { title:'진행률', key:'rate', width:110,
+      render:(_,r)=>{
+        const pct = r.plan ? Math.round(r.done/r.plan*100) : 0
+        return <Space size={4}><Progress percent={pct} size="small" style={{width:70}} showInfo={false} strokeColor={pct===100?'#10B981':pct>60?'#3B82F6':'#F59E0B'} trailColor="#F1F5F9"/><Text style={{fontSize:11,fontWeight:700}}>{pct}%</Text></Space>
+      },
+    },
+    { title:'상태', dataIndex:'status', width:80, filters:WO_STATUS_OPTIONS.map(s=>({text:s,value:s})), onFilter:(v,r)=>r.status===v,
+      render:v=><Badge status={STATUS[v]?.badge} text={v} /> },
+    { title:'액션', key:'action', width:100, fixed:'right',
+      render:(_,r)=>(
+        <Space size={4}>
+          <Button size="small" icon={<EditOutlined />} onClick={()=>{ setEditOrder(r); setFormOpen(true) }} />
+          <Popconfirm title="이 작업지시를 삭제할까요?" okText="삭제" cancelText="취소" okButtonProps={{danger:true}}
+            onConfirm={async()=>{ try { await deleteWorkOrderById(r.key); await loadOrders() } catch { message.error('삭제 실패') } }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      )},
+  ]
+
   return (
     <div>
       <div style={{marginBottom:20}}>
@@ -88,7 +237,7 @@ function WorkOrder() {
         <Text type="secondary">수주 기반 공정별 작업지시서 발행 및 관리</Text>
       </div>
       <Row gutter={12} style={{marginBottom:16}}>
-        {[{l:'완료',v:1,c:'#10B981'},{l:'진행중',v:2,c:'#3B82F6'},{l:'지연',v:1,c:'#EF4444'},{l:'대기',v:1,c:'#94A3B8'}].map((s,i)=>(
+        {[{l:'완료',v:summary.완료,c:'#10B981'},{l:'진행중',v:summary.진행,c:'#3B82F6'},{l:'지연',v:summary.지연,c:'#EF4444'},{l:'대기',v:summary.대기,c:'#94A3B8'}].map((s,i)=>(
           <Col key={i} span={6}>
             <Card bordered={false} style={{borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,0.06)',borderLeft:`4px solid ${s.c}`}} styles={{body:{padding:'12px 16px'}}}>
               <Text style={{fontSize:12,color:'#64748B',display:'block'}}>{s.l}</Text>
@@ -99,88 +248,145 @@ function WorkOrder() {
       </Row>
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
         <Space style={{marginBottom:16,flexWrap:'wrap'}} size={8}>
-          <Select defaultValue="2026-05" style={{width:130}} options={[{label:'2026년 5월',value:'2026-05'}]} />
-          <Select placeholder="상태" style={{width:110}} allowClear options={[{label:'진행',value:'진행'},{label:'완료',value:'완료'},{label:'지연',value:'지연'},{label:'대기',value:'대기'}]} />
-          <Button type="primary">조회</Button>
-          <Button type="primary" icon={<PlusOutlined />} style={{marginLeft:'auto',background:'#10B981',borderColor:'#10B981'}}>작업지시 발행</Button>
-          <Button>일괄 발행</Button>
+          <Select placeholder="상태" style={{width:110}} allowClear value={statusFilter}
+            onChange={setStatusFilter} options={WO_STATUS_OPTIONS.map(s=>({label:s,value:s}))} />
+          <Button type="primary" icon={<PlusOutlined />} style={{background:'#10B981',borderColor:'#10B981'}}
+            onClick={()=>{ setEditOrder(null); setFormOpen(true) }}>작업지시 발행</Button>
         </Space>
-        <Table columns={woColumns} dataSource={WORK_ORDERS} pagination={{pageSize:10}} size="small" bordered scroll={{x:1100}} />
+        <Spin spinning={dbLoading}>
+          <Table columns={cols} dataSource={filtered} pagination={{pageSize:10}} size="small" bordered scroll={{x:1100}}
+            locale={{emptyText:<Empty description="작업지시가 없습니다. 위에서 발행하세요." />}} />
+        </Spin>
       </Card>
+
+      <WorkOrderFormDrawer order={editOrder} orders={orders} open={formOpen} onClose={()=>setFormOpen(false)} onSaved={loadOrders} />
     </div>
   )
 }
 
 function GanttChart() {
-  const totalW = DAY_W * DAYS.length
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const loadOrders = async () => {
+    setLoading(true)
+    try {
+      const data = await fetchWorkOrders()
+      if (data.length) { setOrders(data) }
+      else { await seedWorkOrders(INIT_WORK_ORDERS); setOrders(await fetchWorkOrders()) }
+    } catch { message.error('작업지시 데이터 로드 실패'); setOrders(INIT_WORK_ORDERS.map((o,i)=>({...o,key:String(i)}))) }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { loadOrders() }, [])
+
+  const { days, rows } = useMemo(() => {
+    const withSteps = orders.filter(o => o.start && o.steps?.length)
+    if (!withSteps.length) return { days: [], rows: [] }
+
+    const starts = withSteps.map(o => dayjs(o.start))
+    const ends = withSteps.map(o => {
+      const total = o.steps.reduce((s,p) => s+(p.days||0), 0)
+      return dayjs(o.start).add(Math.max(total-1,0),'day')
+    })
+    const minDate = starts.reduce((a,b) => a.isBefore(b) ? a : b)
+    const maxDate = ends.reduce((a,b) => a.isAfter(b) ? a : b)
+    const dayCount = maxDate.diff(minDate,'day') + 1
+    const days = Array.from({length:dayCount}, (_,i) => minDate.add(i,'day'))
+
+    const rows = withSteps.map(o => {
+      let offset = dayjs(o.start).diff(minDate,'day')
+      const bars = o.steps.map((s,i) => {
+        const bar = { label:s.name, start:offset, len:s.days||1, color: stepColor(s.name,i) }
+        offset += (s.days || 1)
+        return bar
+      })
+      return { key:o.key, wo:o.wo, product:o.product, bars }
+    })
+    return { days, rows }
+  }, [orders])
+
+  const legend = useMemo(() => {
+    const map = new Map()
+    rows.forEach(r => r.bars.forEach(b => { if (!map.has(b.label)) map.set(b.label, b.color) }))
+    return [...map.entries()].map(([label,color]) => ({ label, color }))
+  }, [rows])
+
+  const totalW = DAY_W * days.length
+
   return (
     <div>
       <div style={{marginBottom:20}}>
         <Title level={4} style={{margin:0}}>일정계획 (Gantt 차트)</Title>
-        <Text type="secondary">공정별 작업일정 시각화 — 2026년 5월 4주차 (5/19~31)</Text>
+        <Text type="secondary">작업지시 발행 데이터를 기반으로 한 공정별 작업일정 시각화</Text>
       </div>
       <Card bordered={false} style={{borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
         <Space style={{marginBottom:16}} size={8}>
-          <Select defaultValue="may" style={{width:200}} options={[{label:'2026년 5월 (19~31일)',value:'may'}]} />
-          <Select defaultValue="day" style={{width:100}} options={[{label:'일별',value:'day'},{label:'주별',value:'week'}]} />
-          <Button type="primary">조회</Button>
-          <Button icon={<DownloadOutlined />}>PNG 저장</Button>
+          <Button onClick={loadOrders}>새로고침</Button>
         </Space>
 
-        <div style={{overflowX:'auto'}}>
-          {/* 헤더 */}
-          <div style={{display:'flex',borderBottom:'2px solid #E2E8F0',marginBottom:0}}>
-            <div style={{width:220,flexShrink:0,padding:'8px 12px',fontSize:12,fontWeight:700,color:'#64748B',borderRight:'1px solid #E2E8F0'}}>작업지시 / 제품</div>
-            <div style={{display:'flex',minWidth:totalW}}>
-              {DAYS.map(d=>(
-                <div key={d} style={{width:DAY_W,flexShrink:0,textAlign:'center',fontSize:11,color:'#64748B',padding:'8px 0',borderRight:'1px solid #F1F5F9',fontWeight:600}}>
-                  5/{d}
+        <Spin spinning={loading}>
+          {rows.length === 0 ? (
+            <Empty description="표시할 작업지시가 없습니다. 작업지시 발행 화면에서 먼저 등록하세요." />
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              {/* 헤더 */}
+              <div style={{display:'flex',borderBottom:'2px solid #E2E8F0',marginBottom:0}}>
+                <div style={{width:220,flexShrink:0,padding:'8px 12px',fontSize:12,fontWeight:700,color:'#64748B',borderRight:'1px solid #E2E8F0'}}>작업지시 / 제품</div>
+                <div style={{display:'flex',minWidth:totalW}}>
+                  {days.map((d,i)=>(
+                    <div key={i} style={{width:DAY_W,flexShrink:0,textAlign:'center',fontSize:11,color:'#64748B',padding:'8px 0',borderRight:'1px solid #F1F5F9',fontWeight:600}}>
+                      {d.format('M/D')}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 행 */}
+              {rows.map(row=>(
+                <div key={row.key} style={{display:'flex',borderBottom:'1px solid #F8FAFC',alignItems:'center'}}>
+                  <div style={{width:220,flexShrink:0,padding:'10px 12px',borderRight:'1px solid #E2E8F0'}}>
+                    <div style={{fontSize:13,fontWeight:700,color:'#3B82F6'}}>{row.wo}</div>
+                    <div style={{fontSize:11,color:'#64748B',marginTop:1}}>{row.product}</div>
+                  </div>
+                  <div style={{position:'relative',height:48,minWidth:totalW}}>
+                    {/* 격자 */}
+                    {days.map((_,i)=>(
+                      <div key={i} style={{position:'absolute',left:i*DAY_W,top:0,bottom:0,width:1,background:'#F8FAFC'}} />
+                    ))}
+                    {/* 바 */}
+                    {row.bars.map((bar,bi)=>(
+                      <Tooltip key={bi} title={`${bar.label} (${bar.len}일)`}>
+                        <div style={{
+                          position:'absolute', top:'50%', transform:'translateY(-50%)',
+                          left: bar.start*DAY_W+3, width: bar.len*DAY_W-6,
+                          height:22, borderRadius:5, background:bar.color,
+                          display:'flex', alignItems:'center', justifyContent:'center',
+                          fontSize:10, fontWeight:700, color:'#fff', cursor:'pointer',
+                          boxShadow:'0 1px 4px rgba(0,0,0,0.2)', transition:'filter 0.1s',
+                        }}>
+                          {bar.len>1?bar.label:''}
+                        </div>
+                      </Tooltip>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* 행 */}
-          {GANTT.map((row,ri)=>(
-            <div key={ri} style={{display:'flex',borderBottom:'1px solid #F8FAFC',alignItems:'center'}}>
-              <div style={{width:220,flexShrink:0,padding:'10px 12px',borderRight:'1px solid #E2E8F0'}}>
-                <div style={{fontSize:13,fontWeight:700,color:'#3B82F6'}}>{row.wo}</div>
-                <div style={{fontSize:11,color:'#64748B',marginTop:1}}>{row.product}</div>
-              </div>
-              <div style={{position:'relative',height:48,minWidth:totalW}}>
-                {/* 격자 */}
-                {DAYS.map((_,i)=>(
-                  <div key={i} style={{position:'absolute',left:i*DAY_W,top:0,bottom:0,width:1,background:'#F8FAFC'}} />
-                ))}
-                {/* 바 */}
-                {row.bars.map((bar,bi)=>(
-                  <Tooltip key={bi} title={`${bar.label} (${bar.len}일)`}>
-                    <div style={{
-                      position:'absolute', top:'50%', transform:'translateY(-50%)',
-                      left: bar.start*DAY_W+3, width: bar.len*DAY_W-6,
-                      height:22, borderRadius:5, background:bar.color,
-                      display:'flex', alignItems:'center', justifyContent:'center',
-                      fontSize:10, fontWeight:700, color:'#fff', cursor:'pointer',
-                      boxShadow:'0 1px 4px rgba(0,0,0,0.2)', transition:'filter 0.1s',
-                    }}>
-                      {bar.len>1?bar.label:''}
-                    </div>
-                  </Tooltip>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+          )}
+        </Spin>
 
         {/* 범례 */}
-        <div style={{marginTop:16,display:'flex',gap:16,flexWrap:'wrap'}}>
-          {[{c:'#3B82F6',l:'레이저 절단'},{c:'#7C3AED',l:'프레스/벤딩'},{c:'#F59E0B',l:'용접'},{c:'#10B981',l:'도장'},{c:'#0D9488',l:'조립'}].map((leg,i)=>(
-            <Space key={i} size={6}>
-              <div style={{width:14,height:14,borderRadius:3,background:leg.c}} />
-              <Text style={{fontSize:12,color:'#64748B'}}>{leg.l}</Text>
-            </Space>
-          ))}
-        </div>
+        {legend.length > 0 && (
+          <div style={{marginTop:16,display:'flex',gap:16,flexWrap:'wrap'}}>
+            {legend.map((leg,i)=>(
+              <Space key={i} size={6}>
+                <div style={{width:14,height:14,borderRadius:3,background:leg.color}} />
+                <Text style={{fontSize:12,color:'#64748B'}}>{leg.label}</Text>
+              </Space>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   )
@@ -309,7 +515,15 @@ function ProcessFlow({ processes }) {
 function RouteFormDrawer({ route, open, onClose, onSaved }) {
   const [form] = Form.useForm()
   const [saving, setSaving] = useState(false)
+  const [procOptions, setProcOptions] = useState([])
   const isNew = !route
+
+  useEffect(() => {
+    if (!open) return
+    fetchProcesses().then(list => {
+      setProcOptions((list || []).filter(p => p.isActive).map(p => ({ value: p.name, dept: p.dept })))
+    }).catch(() => {})
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -383,7 +597,20 @@ function RouteFormDrawer({ route, open, onClose, onSaved }) {
               {fields.map((field, idx) => (
                 <div key={field.key} style={{display:'flex',gap:4,marginBottom:6,alignItems:'center'}}>
                   <div style={{flex:0.4,textAlign:'center',color:'#94A3B8',fontSize:12}}>{idx+1}</div>
-                  <div style={{flex:1.8}}><Form.Item name={[field.name,'name']} noStyle rules={[{required:true,message:''}]}><Input placeholder="공정명" /></Form.Item></div>
+                  <div style={{flex:1.8}}>
+                    <Form.Item name={[field.name,'name']} noStyle rules={[{required:true,message:''}]}>
+                      <AutoComplete
+                        placeholder="공정명"
+                        options={procOptions}
+                        filterOption={(input, opt) => opt.value.toLowerCase().includes(input.toLowerCase())}
+                        onSelect={(value, opt) => {
+                          if (opt?.dept && DEPT_OPTIONS.includes(opt.dept)) {
+                            form.setFieldValue(['processes', field.name, 'dept'], opt.dept)
+                          }
+                        }}
+                      />
+                    </Form.Item>
+                  </div>
                   <div style={{flex:1.2}}><Form.Item name={[field.name,'dept']} noStyle><Select placeholder="작업구분" allowClear options={DEPT_OPTIONS.map(d=>({label:d,value:d}))} /></Form.Item></div>
                   <div style={{flex:1}}><Form.Item name={[field.name,'timePerEa']} noStyle><InputNumber min={0} step={1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
                   <div style={{flex:1}}><Form.Item name={[field.name,'setupTime']} noStyle><InputNumber min={0} step={1} style={{width:'100%'}} placeholder="0" /></Form.Item></div>
